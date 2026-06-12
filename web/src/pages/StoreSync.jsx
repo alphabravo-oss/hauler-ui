@@ -1,10 +1,12 @@
 import { useState, useEffect } from 'react'
 import { useNavigate, NavLink, useParams } from 'react-router-dom'
 import { useJobs } from '../App.jsx'
+import { useHauls } from '../contexts/HaulContext.jsx'
 import { AlertTriangle, X, RefreshCw } from 'lucide-react'
 
 function StoreSync() {
   const { fetchJobs } = useJobs()
+  const { activeHaul } = useHauls()
   const navigate = useNavigate()
   const { manifestId } = useParams()
 
@@ -98,6 +100,7 @@ function StoreSync() {
     try {
       // Build request based on source type
       let requestPayload = {
+        haulId: activeHaul?.id,
         platform: platform || undefined,
         key: key || undefined,
         certificateIdentity: certificateIdentity || undefined,

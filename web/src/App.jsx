@@ -1,10 +1,10 @@
-import { useState, useEffect, createContext, useContext, useCallback } from 'react'
+import { useState, useEffect, useRef, createContext, useContext, useCallback } from 'react'
 import { HashRouter as Router, Routes, Route, NavLink, useNavigate, useLocation } from 'react-router-dom'
 import { ModalProvider } from './components/Modal.jsx'
 import {
   Image, BarChart3, FileText, RefreshCw, Save, Download, Upload,
-  Clipboard, Globe, Trash2, Check, X, AlertTriangle, Search, Edit,
-  Package, Folder, Truck, Inbox, Loader
+  Clipboard, Globe, Trash2, Check, X,
+  Package, Folder, Inbox, Loader
 } from 'lucide-react'
 import StoreAddImage from './pages/StoreAddImage.jsx'
 import StoreAddChart from './pages/StoreAddChart.jsx'
@@ -18,7 +18,10 @@ import StoreRemove from './pages/StoreRemove.jsx'
 import Manifests from './pages/Manifests.jsx'
 import StoreContents from './pages/StoreContents.jsx'
 import Hauls from './pages/Hauls.jsx'
+import HaulDetail from './pages/HaulDetail.jsx'
 import Login from './pages/Login.jsx'
+import { HaulProvider, useHauls } from './contexts/HaulContext.jsx'
+import { ChevronDown, Layers } from 'lucide-react'
 import './App.css'
 
 // === Context for Auth ===
@@ -212,9 +215,14 @@ function Sidebar() {
       title: 'Main',
       items: [
         { path: '/', label: 'Dashboard' },
-        { path: '/store', label: 'Store' },
+        { path: '/hauls', label: 'Hauls' }
+      ]
+    },
+    {
+      title: 'Active Haul',
+      items: [
+        { path: '/store', label: 'Store Operations' },
         { path: '/store/contents', label: 'Store Contents' },
-        { path: '/hauls', label: 'Hauls' },
         { path: '/manifests', label: 'Manifests' }
       ]
     },
@@ -493,6 +501,7 @@ function Store() {
 }
 
 function Serve() {
+  const { activeHaul } = useHauls()
   // Registry state
   const [registryPort, setRegistryPort] = useState(5000)
   const [registryReadonly, setRegistryReadonly] = useState(true)
@@ -523,7 +532,8 @@ function Serve() {
   // Fetch registry processes
   const fetchRegistryProcesses = async () => {
     try {
-      const res = await fetch('/api/serve/registry')
+      const haulQuery = activeHaul ? `?haul=${activeHaul.id}` : ''
+      const res = await fetch(`/api/serve/registry${haulQuery}`)
       if (res.ok) {
         const data = await res.json()
         setRegistryProcesses(data)
@@ -538,7 +548,8 @@ function Serve() {
   // Fetch fileserver processes
   const fetchFileserverProcesses = async () => {
     try {
-      const res = await fetch('/api/serve/fileserver')
+      const haulQuery = activeHaul ? `?haul=${activeHaul.id}` : ''
+      const res = await fetch(`/api/serve/fileserver${haulQuery}`)
       if (res.ok) {
         const data = await res.json()
         setFileserverProcesses(data)
@@ -567,6 +578,7 @@ function Serve() {
 
     try {
       const requestPayload = {
+        haulId: activeHaul?.id,
         port: registryPort || 5000,
         readonly: registryReadonly,
         tlsCert: registryAutoTls ? undefined : (registryTlsCert || undefined),
@@ -632,6 +644,7 @@ function Serve() {
 
     try {
       const requestPayload = {
+        haulId: activeHaul?.id,
         port: fileserverPort || 8080,
         timeout: fileserverTimeout ? parseInt(fileserverTimeout) : undefined,
         tlsCert: fileserverAutoTls ? undefined : (fileserverTlsCert || undefined),
@@ -700,11 +713,6 @@ function Serve() {
       default:
         return 'badge-info'
     }
-  }
-
-  const formatTime = (dateStr) => {
-    if (!dateStr) return '-'
-    return new Date(dateStr).toLocaleString()
   }
 
   return (
@@ -1678,7 +1686,7 @@ function JobDetail() {
                     <strong>Archive path:</strong> <code>{result.archivePath}</code>
                   </p>
                   <a
-                    href={`/api/downloads/${result.filename}`}
+                    href={result.downloadUrl || `/api/downloads/${result.filename}`}
                     className="btn btn-primary"
                     download
                   >
@@ -1741,6 +1749,92 @@ function JobDetail() {
 
 // === Main App ===
 
+function HaulSwitcher() {
+  const { hauls, activeHaul, setActiveHaulId } = useHauls()
+  const [open, setOpen] = useState(false)
+  const navigate = useNavigate()
+  const ref = useRef(null)
+
+  useEffect(() => {
+    const onClick = (e) => {
+      if (ref.current && !ref.current.contains(e.target)) {
+        setOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', onClick)
+    return () => document.removeEventListener('mousedown', onClick)
+  }, [])
+
+  const handleSelect = (haul) => {
+    setActiveHaulId(haul.id)
+    setOpen(false)
+    navigate(`/hauls/${haul.id}`)
+  }
+
+  return (
+    <div ref={ref} style={{ position: 'relative' }}>
+      <button
+        className="btn btn-sm"
+        onClick={() => setOpen(!open)}
+        title="Active haul"
+        style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', maxWidth: '220px' }}
+      >
+        <Layers size={14} style={{ color: 'var(--accent-amber)' }} />
+        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          {activeHaul ? activeHaul.name : 'No haul selected'}
+        </span>
+        <ChevronDown size={14} />
+      </button>
+      {open && (
+        <div
+          style={{
+            position: 'absolute', top: 'calc(100% + 4px)', right: 0, zIndex: 50,
+            minWidth: '240px', maxHeight: '320px', overflowY: 'auto',
+            background: 'var(--bg-secondary)', border: '1px solid var(--border-color)',
+            borderRadius: '6px', boxShadow: '0 8px 24px rgba(0,0,0,0.4)', padding: '0.35rem',
+          }}
+        >
+          {hauls.length === 0 ? (
+            <div style={{ padding: '0.5rem 0.75rem', color: 'var(--text-muted)', fontSize: '0.85rem' }}>
+              No hauls yet
+            </div>
+          ) : (
+            hauls.map((haul) => (
+              <button
+                key={haul.id}
+                onClick={() => handleSelect(haul)}
+                style={{
+                  display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                  width: '100%', padding: '0.5rem 0.65rem', background: haul.id === activeHaul?.id ? 'var(--bg-tertiary)' : 'transparent',
+                  border: 'none', borderRadius: '4px', cursor: 'pointer', color: 'var(--text-primary)',
+                  fontSize: '0.85rem', textAlign: 'left',
+                }}
+              >
+                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{haul.name}</span>
+                <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>
+                  {(haul.imageCount || 0) + (haul.chartCount || 0) + (haul.fileCount || 0)} items
+                </span>
+              </button>
+            ))
+          )}
+          <div style={{ borderTop: '1px solid var(--border-color)', marginTop: '0.35rem', paddingTop: '0.35rem' }}>
+            <button
+              onClick={() => { setOpen(false); navigate('/hauls') }}
+              style={{
+                display: 'block', width: '100%', padding: '0.5rem 0.65rem', background: 'transparent',
+                border: 'none', borderRadius: '4px', cursor: 'pointer', color: 'var(--accent-amber)',
+                fontSize: '0.85rem', textAlign: 'left',
+              }}
+            >
+              Manage hauls →
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 function TopBar() {
   const { logout, authEnabled } = useAuth()
   const navigate = useNavigate()
@@ -1756,6 +1850,7 @@ function TopBar() {
         <span style={{ color: 'var(--accent-amber-dim)' }}>$</span> hauler-ui
       </div>
       <div className="top-bar-right">
+        <HaulSwitcher />
         <JobIndicator />
         {authEnabled && (
           <button className="btn btn-sm" onClick={handleLogout} style={{ marginLeft: '0.5rem' }}>
@@ -1799,6 +1894,7 @@ function App() {
     <Router>
       <AuthProvider>
         <ModalProvider>
+          <HaulProvider>
           <JobsProvider>
             <Routes>
               <Route path="/login" element={<Login />} />
@@ -1825,6 +1921,7 @@ function App() {
                           <Route path="/store/contents" element={<StoreContents />} />
                           <Route path="/manifests" element={<Manifests />} />
                           <Route path="/hauls" element={<Hauls />} />
+                          <Route path="/hauls/:id" element={<HaulDetail />} />
                           <Route path="/serve" element={<Serve />} />
                           <Route path="/registry" element={<RegistryLogin />} />
                           <Route path="/settings" element={<Settings />} />
@@ -1838,6 +1935,7 @@ function App() {
               } />
             </Routes>
           </JobsProvider>
+          </HaulProvider>
         </ModalProvider>
       </AuthProvider>
     </Router>

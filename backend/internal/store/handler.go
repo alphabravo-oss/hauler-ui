@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/hauler-ui/hauler-ui/backend/internal/config"
+	"github.com/hauler-ui/hauler-ui/backend/internal/hauls"
 	"github.com/hauler-ui/hauler-ui/backend/internal/jobrunner"
 )
 
@@ -23,18 +24,47 @@ import (
 type Handler struct {
 	JobRunner *jobrunner.Runner
 	Cfg       *config.Config
+	Hauls     *hauls.Service
 }
 
 // NewHandler creates a new store handler
-func NewHandler(jobRunner *jobrunner.Runner, cfg *config.Config) *Handler {
+func NewHandler(jobRunner *jobrunner.Runner, cfg *config.Config, haulSvc *hauls.Service) *Handler {
 	return &Handler{
 		JobRunner: jobRunner,
 		Cfg:       cfg,
+		Hauls:     haulSvc,
+	}
+}
+
+// resolveHaul returns the haul a request targets. When haulID is 0 it falls back
+// to the default haul. It also returns the "--store <dir>" args that scope a
+// hauler command to that haul's isolated store directory.
+func (h *Handler) resolveHaul(ctx context.Context, haulID int64) (*hauls.Haul, []string, error) {
+	var (
+		haul *hauls.Haul
+		err  error
+	)
+	if haulID > 0 {
+		haul, err = h.Hauls.Get(ctx, haulID)
+	} else {
+		haul, err = h.Hauls.EnsureDefault(ctx)
+	}
+	if err != nil {
+		return nil, nil, err
+	}
+	return haul, []string{"--store", haul.StoreDir}, nil
+}
+
+// tagJobHaul records which haul a job operated on, so job history can be filtered.
+func (h *Handler) tagJobHaul(ctx context.Context, jobID, haulID int64) {
+	if _, err := h.JobRunner.DB().ExecContext(ctx, `UPDATE jobs SET haul_id = ? WHERE id = ?`, haulID, jobID); err != nil {
+		log.Printf("Warning: failed to tag job %d with haul %d: %v", jobID, haulID, err)
 	}
 }
 
 // AddImageRequest represents the request to add an image to the store
 type AddImageRequest struct {
+	HaulID                      int64  `json:"haulId,omitempty"`
 	ImageRef                    string `json:"imageRef"`
 	Platform                    string `json:"platform,omitempty"`
 	Key                         string `json:"key,omitempty"`
@@ -62,6 +92,12 @@ func (h *Handler) AddImage(w http.ResponseWriter, r *http.Request) {
 
 	if req.ImageRef == "" {
 		http.Error(w, "imageRef is required", http.StatusBadRequest)
+		return
+	}
+
+	haul, storeArgs, err := h.resolveHaul(r.Context(), req.HaulID)
+	if err != nil {
+		http.Error(w, "Failed to resolve haul: "+err.Error(), http.StatusBadRequest)
 		return
 	}
 
@@ -105,6 +141,9 @@ func (h *Handler) AddImage(w http.ResponseWriter, r *http.Request) {
 		args = append(args, "--use-tlog-verify")
 	}
 
+	// Scope to this haul's store.
+	args = append(args, storeArgs...)
+
 	// Create a job for the add image operation
 	job, err := h.JobRunner.CreateJob(r.Context(), "hauler", args, nil)
 	if err != nil {
@@ -112,13 +151,7 @@ func (h *Handler) AddImage(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Failed to create add image job", http.StatusInternalServerError)
 		return
 	}
-
-	// Start the job in background
-	go func() {
-		if err := h.JobRunner.Start(r.Context(), job.ID); err != nil {
-			log.Printf("Error starting add image job %d: %v", job.ID, err)
-		}
-	}()
+	h.tagJobHaul(r.Context(), job.ID, haul.ID)
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusAccepted)
@@ -126,11 +159,13 @@ func (h *Handler) AddImage(w http.ResponseWriter, r *http.Request) {
 		"jobId":    job.ID,
 		"message":  "Add image job started",
 		"imageRef": req.ImageRef,
+		"haulId":   haul.ID,
 	})
 }
 
 // AddChartRequest represents the request to add a chart to the store
 type AddChartRequest struct {
+	HaulID                 int64  `json:"haulId,omitempty"`
 	Name                   string `json:"name"`
 	RepoURL                string `json:"repoUrl,omitempty"`
 	Version                string `json:"version,omitempty"`
@@ -161,6 +196,12 @@ func (h *Handler) AddChart(w http.ResponseWriter, r *http.Request) {
 
 	if req.Name == "" {
 		http.Error(w, "name is required", http.StatusBadRequest)
+		return
+	}
+
+	haul, storeArgs, err := h.resolveHaul(r.Context(), req.HaulID)
+	if err != nil {
+		http.Error(w, "Failed to resolve haul: "+err.Error(), http.StatusBadRequest)
 		return
 	}
 
@@ -217,6 +258,9 @@ func (h *Handler) AddChart(w http.ResponseWriter, r *http.Request) {
 		args = append(args, "--add-images")
 	}
 
+	// Scope to this haul's store.
+	args = append(args, storeArgs...)
+
 	// Create a job for the add chart operation
 	job, err := h.JobRunner.CreateJob(r.Context(), "hauler", args, nil)
 	if err != nil {
@@ -224,13 +268,7 @@ func (h *Handler) AddChart(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Failed to create add chart job", http.StatusInternalServerError)
 		return
 	}
-
-	// Start the job in background
-	go func() {
-		if err := h.JobRunner.Start(r.Context(), job.ID); err != nil {
-			log.Printf("Error starting add chart job %d: %v", job.ID, err)
-		}
-	}()
+	h.tagJobHaul(r.Context(), job.ID, haul.ID)
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusAccepted)
@@ -238,11 +276,13 @@ func (h *Handler) AddChart(w http.ResponseWriter, r *http.Request) {
 		"jobId":   job.ID,
 		"message": "Add chart job started",
 		"name":    req.Name,
+		"haulId":  haul.ID,
 	})
 }
 
 // AddFileRequest represents the request to add a file to the store
 type AddFileRequest struct {
+	HaulID   int64  `json:"haulId,omitempty"`
 	FilePath string `json:"filePath,omitempty"`
 	URL      string `json:"url,omitempty"`
 	Name     string `json:"name,omitempty"`
@@ -250,6 +290,7 @@ type AddFileRequest struct {
 
 // SyncRequest represents the request to sync the store from manifests
 type SyncRequest struct {
+	HaulID                      int64    `json:"haulId,omitempty"`
 	ManifestYaml                string   `json:"manifestYaml,omitempty"`
 	Filenames                   []string `json:"filenames,omitempty"`
 	Platform                    string   `json:"platform,omitempty"`
@@ -289,6 +330,12 @@ func (h *Handler) AddFile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	haul, storeArgs, err := h.resolveHaul(r.Context(), req.HaulID)
+	if err != nil {
+		http.Error(w, "Failed to resolve haul: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+
 	// Determine the file source
 	fileSource := req.FilePath
 	if fileSource == "" {
@@ -303,6 +350,9 @@ func (h *Handler) AddFile(w http.ResponseWriter, r *http.Request) {
 		args = append(args, "--name", req.Name)
 	}
 
+	// Scope to this haul's store.
+	args = append(args, storeArgs...)
+
 	// Create a job for the add file operation
 	job, err := h.JobRunner.CreateJob(r.Context(), "hauler", args, nil)
 	if err != nil {
@@ -310,13 +360,7 @@ func (h *Handler) AddFile(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Failed to create add file job", http.StatusInternalServerError)
 		return
 	}
-
-	// Start the job in background
-	go func() {
-		if err := h.JobRunner.Start(r.Context(), job.ID); err != nil {
-			log.Printf("Error starting add file job %d: %v", job.ID, err)
-		}
-	}()
+	h.tagJobHaul(r.Context(), job.ID, haul.ID)
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusAccepted)
@@ -324,6 +368,7 @@ func (h *Handler) AddFile(w http.ResponseWriter, r *http.Request) {
 		"jobId":   job.ID,
 		"message": "Add file job started",
 		"file":    fileSource,
+		"haulId":  haul.ID,
 	})
 }
 
@@ -358,6 +403,12 @@ func (h *Handler) Sync(w http.ResponseWriter, r *http.Request) {
 	var req SyncRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "Invalid request body: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	haul, storeArgs, err := h.resolveHaul(r.Context(), req.HaulID)
+	if err != nil {
+		http.Error(w, "Failed to resolve haul: "+err.Error(), http.StatusBadRequest)
 		return
 	}
 
@@ -448,6 +499,9 @@ func (h *Handler) Sync(w http.ResponseWriter, r *http.Request) {
 		args = append(args, "--use-tlog-verify")
 	}
 
+	// Scope to this haul's store.
+	args = append(args, storeArgs...)
+
 	// Create a job for the sync operation
 	job, err := h.JobRunner.CreateJob(r.Context(), "hauler", args, nil)
 	if err != nil {
@@ -455,13 +509,7 @@ func (h *Handler) Sync(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Failed to create sync job", http.StatusInternalServerError)
 		return
 	}
-
-	// Start the job in background
-	go func() {
-		if err := h.JobRunner.Start(r.Context(), job.ID); err != nil {
-			log.Printf("Error starting sync job %d: %v", job.ID, err)
-		}
-	}()
+	h.tagJobHaul(r.Context(), job.ID, haul.ID)
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusAccepted)
@@ -469,14 +517,16 @@ func (h *Handler) Sync(w http.ResponseWriter, r *http.Request) {
 		"jobId":     job.ID,
 		"message":   "Sync job started",
 		"filenames": filenames,
+		"haulId":    haul.ID,
 	})
 }
 
 // SaveRequest represents the request to save the store to an archive
 type SaveRequest struct {
-	Filename    string `json:"filename,omitempty"`
-	Platform    string `json:"platform,omitempty"`
-	Containerd  string `json:"containerd,omitempty"`
+	HaulID     int64  `json:"haulId,omitempty"`
+	Filename   string `json:"filename,omitempty"`
+	Platform   string `json:"platform,omitempty"`
+	Containerd string `json:"containerd,omitempty"`
 }
 
 // Save handles POST /api/store/save
@@ -492,14 +542,35 @@ func (h *Handler) Save(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Default filename if not provided
-	filename := req.Filename
-	if filename == "" {
-		filename = "haul.tar.zst"
+	haul, storeArgs, err := h.resolveHaul(r.Context(), req.HaulID)
+	if err != nil {
+		http.Error(w, "Failed to resolve haul: "+err.Error(), http.StatusBadRequest)
+		return
 	}
 
+	// Default filename if not provided. Archives are written into the haul's
+	// own archives directory so they stay associated with the haul.
+	filename := strings.TrimSpace(req.Filename)
+	if filename == "" {
+		filename = haul.Slug + ".tar.zst"
+	}
+	if !strings.HasSuffix(strings.ToLower(filename), ".tar.zst") {
+		filename += ".tar.zst"
+	}
+	// Reject path traversal in user-supplied filenames.
+	if strings.Contains(filename, "..") || strings.ContainsAny(filename, "/\\") {
+		http.Error(w, "Invalid filename", http.StatusBadRequest)
+		return
+	}
+
+	if err := os.MkdirAll(haul.ArchivesDir(), 0755); err != nil {
+		http.Error(w, "Failed to prepare archives directory: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	archivePath := filepath.Join(haul.ArchivesDir(), filename)
+
 	// Build args for hauler store save command
-	args := []string{"store", "save", "--filename", filename}
+	args := []string{"store", "save", "--filename", archivePath}
 
 	// Optional platform
 	if req.Platform != "" {
@@ -511,33 +582,19 @@ func (h *Handler) Save(w http.ResponseWriter, r *http.Request) {
 		args = append(args, "--containerd", req.Containerd)
 	}
 
-	// Resolve the full path of the archive for later download
-	archivePath := filename
-	if !filepath.IsAbs(filename) {
-		// If relative, it will be in the current working directory
-		// For predictability, we'll use the data directory
-		archivePath = filepath.Join(h.Cfg.DataDir, filename)
-	}
+	// Scope to this haul's store.
+	args = append(args, storeArgs...)
 
-	// Store metadata for post-job processing
-	saveMetadata := map[string]interface{}{
-		"filename":    filename,
-		"archivePath": archivePath,
-	}
-	metadataJSON, _ := json.Marshal(saveMetadata)
-
-	// Create a job with the metadata in env overrides for later retrieval
-	job, err := h.JobRunner.CreateJob(r.Context(), "hauler", args, map[string]string{
-		"HAULER_SAVE_METADATA": string(metadataJSON),
-	})
+	job, err := h.JobRunner.CreateJob(r.Context(), "hauler", args, nil)
 	if err != nil {
 		log.Printf("Error creating save job: %v", err)
 		http.Error(w, "Failed to create save job", http.StatusInternalServerError)
 		return
 	}
+	h.tagJobHaul(r.Context(), job.ID, haul.ID)
 
-	// Start the job in background with result tracking
-	go h.runSaveJob(r.Context(), job.ID, archivePath)
+	// Track the archive path and download URL once the job succeeds.
+	go h.trackSaveResult(job.ID, haul.ID, archivePath, filename)
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusAccepted)
@@ -545,293 +602,53 @@ func (h *Handler) Save(w http.ResponseWriter, r *http.Request) {
 		"jobId":    job.ID,
 		"message":  "Save job started",
 		"filename": filename,
+		"haulId":   haul.ID,
 	})
 }
 
-// runSaveJob starts a save job and updates the result with archive path on success
-func (h *Handler) runSaveJob(ctx context.Context, jobID int64, archivePath string) {
-	if err := h.JobRunner.Start(ctx, jobID); err != nil {
-		log.Printf("Error starting save job %d: %v", jobID, err)
-		return
-	}
+// trackSaveResult waits for a save job to finish and records the resulting
+// archive path and download URL on the job. Uses a background context because
+// it outlives the originating HTTP request.
+func (h *Handler) trackSaveResult(jobID, haulID int64, archivePath, filename string) {
+	ctx := context.Background()
+	ticker := time.NewTicker(500 * time.Millisecond)
+	defer ticker.Stop()
 
-	// Wait a moment for the job to complete, then update result
-	// In production, this would be better handled with a completion callback
-	go func() {
-		ticker := time.NewTicker(500 * time.Millisecond)
-		defer ticker.Stop()
-
-		for range ticker.C {
-			job, err := h.JobRunner.GetJob(ctx, jobID)
-			if err != nil {
-				return
-			}
-
-			if job.Status == jobrunner.StatusSucceeded {
-				// Verify the archive exists
-				if _, err := os.Stat(archivePath); err == nil {
-					result := map[string]interface{}{
-						"archivePath": archivePath,
-						"filename":    filepath.Base(archivePath),
-					}
-					resultJSON, _ := json.Marshal(result)
-					_ = h.JobRunner.UpdateResult(ctx, jobID, string(resultJSON))
-				}
-				return
-			}
-
-			if job.Status == jobrunner.StatusFailed {
-				return
-			}
-		}
-	}()
-}
-
-// HaulInfo represents information about a haul archive file
-type HaulInfo struct {
-	Name     string    `json:"name"`
-	Size     int64     `json:"size"`
-	Modified time.Time `json:"modified"`
-}
-
-// ListHauls handles GET /api/store/hauls
-// Returns a list of .tar.zst archive files in the data directory
-func (h *Handler) ListHauls(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-
-	// Ensure data directory exists
-	dataDir := h.Cfg.DataDir
-	if dataDir == "" {
-		dataDir = "."
-	}
-
-	// Read directory entries
-	entries, err := os.ReadDir(dataDir)
-	if err != nil {
-		if os.IsNotExist(err) {
-			// Directory doesn't exist yet, return empty list
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(http.StatusOK)
-			_ = json.NewEncoder(w).Encode(map[string]interface{}{
-				"hauls": []HaulInfo{},
-			})
+	for range ticker.C {
+		job, err := h.JobRunner.GetJob(ctx, jobID)
+		if err != nil {
 			return
 		}
-		log.Printf("Error reading data directory: %v", err)
-		http.Error(w, "Failed to read data directory", http.StatusInternalServerError)
-		return
-	}
-
-	// Filter for .tar.zst files
-	var hauls []HaulInfo
-	for _, entry := range entries {
-		if entry.IsDir() {
-			continue
-		}
-		name := entry.Name()
-		// Check for .tar.zst extension
-		if strings.HasSuffix(strings.ToLower(name), ".tar.zst") {
-			info, err := entry.Info()
-			if err != nil {
-				log.Printf("Error getting file info for %s: %v", name, err)
-				continue
-			}
-			hauls = append(hauls, HaulInfo{
-				Name:     name,
-				Size:     info.Size(),
-				Modified: info.ModTime(),
-			})
-		}
-	}
-
-	// Sort by modified time (newest first)
-	// Sort in reverse order so newest is first
-	for i := 0; i < len(hauls); i++ {
-		for j := i + 1; j < len(hauls); j++ {
-			if hauls[i].Modified.Before(hauls[j].Modified) {
-				hauls[i], hauls[j] = hauls[j], hauls[i]
-			}
-		}
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	_ = json.NewEncoder(w).Encode(map[string]interface{}{
-		"hauls": hauls,
-	})
-}
-
-// DeleteHaul handles DELETE /api/store/hauls/{filename}
-// Deletes a specific haul archive file
-func (h *Handler) DeleteHaul(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodDelete && r.Method != http.MethodPost {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-
-	// Extract filename from path
-	// Path format: /api/store/hauls/{filename}
-	prefix := "/api/store/hauls/"
-	if !strings.HasPrefix(r.URL.Path, prefix) {
-		http.Error(w, "Invalid path", http.StatusBadRequest)
-		return
-	}
-
-	filename := strings.TrimPrefix(r.URL.Path, prefix)
-	if filename == "" {
-		http.Error(w, "Filename required", http.StatusBadRequest)
-		return
-	}
-
-	// Security: ensure filename doesn't contain path traversal
-	if strings.Contains(filename, "..") || strings.Contains(filename, "/") || strings.Contains(filename, "\\") {
-		http.Error(w, "Invalid filename", http.StatusBadRequest)
-		return
-	}
-
-	// Verify the file has .tar.zst extension before allowing delete
-	if !strings.HasSuffix(strings.ToLower(filename), ".tar.zst") {
-		http.Error(w, "Only .tar.zst files can be deleted through this endpoint", http.StatusBadRequest)
-		return
-	}
-
-	// Build the full path to the archive
-	archivePath := filepath.Join(h.Cfg.DataDir, filename)
-
-	// Check if file exists
-	if _, err := os.Stat(archivePath); os.IsNotExist(err) {
-		http.Error(w, "File not found", http.StatusNotFound)
-		return
-	}
-
-	// Delete the file
-	if err := os.Remove(archivePath); err != nil {
-		log.Printf("Error deleting haul file %s: %v", archivePath, err)
-		http.Error(w, "Failed to delete file", http.StatusInternalServerError)
-		return
-	}
-
-	log.Printf("Deleted haul archive: %s", archivePath)
-
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	_ = json.NewEncoder(w).Encode(map[string]interface{}{
-		"message": "Haul deleted successfully",
-		"filename": filename,
-	})
-}
-
-// ServeDownload handles GET /api/downloads/{filename} for downloading saved archives
-func (h *Handler) ServeDownload(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-
-	// Extract filename from path
-	// Path format: /api/downloads/{filename}
-	prefix := "/api/downloads/"
-	if !strings.HasPrefix(r.URL.Path, prefix) {
-		http.Error(w, "Invalid download path", http.StatusBadRequest)
-		return
-	}
-
-	filename := strings.TrimPrefix(r.URL.Path, prefix)
-	if filename == "" {
-		http.Error(w, "Filename required", http.StatusBadRequest)
-		return
-	}
-
-	// Security: ensure filename doesn't contain path traversal
-	if strings.Contains(filename, "..") || strings.Contains(filename, "/") || strings.Contains(filename, "\\") {
-		http.Error(w, "Invalid filename", http.StatusBadRequest)
-		return
-	}
-
-	// Build the full path to the archive
-	archivePath := filepath.Join(h.Cfg.DataDir, filename)
-
-	// Check if file exists
-	fileInfo, err := os.Stat(archivePath)
-	if err != nil {
-		if os.IsNotExist(err) {
-			http.Error(w, "File not found", http.StatusNotFound)
-		} else {
-			http.Error(w, "Error accessing file", http.StatusInternalServerError)
-		}
-		return
-	}
-
-	// Open the file
-	file, err := os.Open(archivePath)
-	if err != nil {
-		http.Error(w, "Error opening file", http.StatusInternalServerError)
-		return
-	}
-	defer file.Close()
-
-	// Set headers for download
-	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=\"%s\"", filename))
-	w.Header().Set("Content-Type", "application/octet-stream")
-	w.Header().Set("Content-Length", fmt.Sprintf("%d", fileInfo.Size()))
-
-	// Support range requests
-	w.Header().Set("Accept-Ranges", "bytes")
-
-	// Handle range request if present
-	rangeHeader := r.Header.Get("Range")
-	if rangeHeader != "" {
-		// Parse Range header (format: bytes=start-end)
-		if strings.HasPrefix(rangeHeader, "bytes=") {
-			rangeSpec := strings.TrimPrefix(rangeHeader, "bytes=")
-			parts := strings.Split(rangeSpec, "-")
-			if len(parts) == 2 {
-				var start, end int64
-				if parts[0] != "" {
-					start, _ = strconv.ParseInt(parts[0], 10, 64)
+		switch job.Status {
+		case jobrunner.StatusSucceeded:
+			if _, err := os.Stat(archivePath); err == nil {
+				result := map[string]interface{}{
+					"archivePath": archivePath,
+					"filename":    filename,
+					"downloadUrl": fmt.Sprintf("/api/hauls/%d/archives/%s", haulID, filename),
 				}
-				if parts[1] != "" {
-					end, _ = strconv.ParseInt(parts[1], 10, 64)
-				} else {
-					end = fileInfo.Size() - 1
-				}
-
-				if start >= 0 && end >= start && end < fileInfo.Size() {
-					w.Header().Set("Content-Range", fmt.Sprintf("bytes %d-%d/%d", start, end, fileInfo.Size()))
-					w.Header().Set("Content-Length", fmt.Sprintf("%d", end-start+1))
-					w.WriteHeader(http.StatusPartialContent)
-
-					_, _ = file.Seek(start, 0)
-					_, err = io.CopyN(w, file, end-start+1)
-					if err != nil {
-						log.Printf("Error serving file range: %v", err)
-					}
-					return
-				}
+				resultJSON, _ := json.Marshal(result)
+				_ = h.JobRunner.UpdateResult(ctx, jobID, string(resultJSON))
 			}
+			return
+		case jobrunner.StatusFailed:
+			return
 		}
-	}
-
-	// Serve entire file
-	_, err = io.Copy(w, file)
-	if err != nil {
-		log.Printf("Error serving file: %v", err)
 	}
 }
 
 // ExtractRequest represents the request to extract an artifact from the store
 type ExtractRequest struct {
+	HaulID      int64  `json:"haulId,omitempty"`
 	ArtifactRef string `json:"artifactRef"`
 	OutputDir   string `json:"outputDir,omitempty"`
 }
 
 // LoadRequest represents the request to load archives into the store
 type LoadRequest struct {
+	HaulID    int64    `json:"haulId,omitempty"`
 	Filenames []string `json:"filenames,omitempty"`
-	Clear      bool     `json:"clear"`
+	Clear     bool     `json:"clear"`
 }
 
 // Extract handles POST /api/store/extract
@@ -852,6 +669,12 @@ func (h *Handler) Extract(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	haul, storeArgs, err := h.resolveHaul(r.Context(), req.HaulID)
+	if err != nil {
+		http.Error(w, "Failed to resolve haul: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+
 	// Build args for hauler store extract command
 	args := []string{"store", "extract", req.ArtifactRef}
 
@@ -860,16 +683,19 @@ func (h *Handler) Extract(w http.ResponseWriter, r *http.Request) {
 		args = append(args, "--output", req.OutputDir)
 	}
 
-	// Create a job for the extract operation
+	// Scope to this haul's store.
+	args = append(args, storeArgs...)
+
 	job, err := h.JobRunner.CreateJob(r.Context(), "hauler", args, nil)
 	if err != nil {
 		log.Printf("Error creating extract job: %v", err)
 		http.Error(w, "Failed to create extract job", http.StatusInternalServerError)
 		return
 	}
+	h.tagJobHaul(r.Context(), job.ID, haul.ID)
 
-	// Start the job in background with result tracking
-	go h.runExtractJob(r.Context(), job.ID, req.OutputDir)
+	// Record the output directory on success.
+	go h.trackExtractResult(job.ID, req.OutputDir)
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusAccepted)
@@ -878,47 +704,34 @@ func (h *Handler) Extract(w http.ResponseWriter, r *http.Request) {
 		"message":     "Extract job started",
 		"artifactRef": req.ArtifactRef,
 		"outputDir":   req.OutputDir,
+		"haulId":      haul.ID,
 	})
 }
 
-// runExtractJob starts an extract job and updates the result with output directory on success
-func (h *Handler) runExtractJob(ctx context.Context, jobID int64, outputDir string) {
-	if err := h.JobRunner.Start(ctx, jobID); err != nil {
-		log.Printf("Error starting extract job %d: %v", jobID, err)
-		return
-	}
+// trackExtractResult records the output directory once an extract job succeeds.
+func (h *Handler) trackExtractResult(jobID int64, outputDir string) {
+	ctx := context.Background()
+	ticker := time.NewTicker(500 * time.Millisecond)
+	defer ticker.Stop()
 
-	// Wait for job completion and update result
-	go func() {
-		ticker := time.NewTicker(500 * time.Millisecond)
-		defer ticker.Stop()
-
-		for range ticker.C {
-			job, err := h.JobRunner.GetJob(ctx, jobID)
-			if err != nil {
-				return
-			}
-
-			if job.Status == jobrunner.StatusSucceeded {
-				// If outputDir wasn't specified, try to determine it from the job output
-				resultOutputDir := outputDir
-				if resultOutputDir == "" {
-					resultOutputDir = "." // Default to current directory
-				}
-
-				result := map[string]interface{}{
-					"outputDir": resultOutputDir,
-				}
-				resultJSON, _ := json.Marshal(result)
-				_ = h.JobRunner.UpdateResult(ctx, jobID, string(resultJSON))
-				return
-			}
-
-			if job.Status == jobrunner.StatusFailed {
-				return
-			}
+	for range ticker.C {
+		job, err := h.JobRunner.GetJob(ctx, jobID)
+		if err != nil {
+			return
 		}
-	}()
+		switch job.Status {
+		case jobrunner.StatusSucceeded:
+			resultOutputDir := outputDir
+			if resultOutputDir == "" {
+				resultOutputDir = "."
+			}
+			resultJSON, _ := json.Marshal(map[string]interface{}{"outputDir": resultOutputDir})
+			_ = h.JobRunner.UpdateResult(ctx, jobID, string(resultJSON))
+			return
+		case jobrunner.StatusFailed:
+			return
+		}
+	}
 }
 
 // Load handles POST /api/store/load
@@ -936,42 +749,59 @@ func (h *Handler) Load(w http.ResponseWriter, r *http.Request) {
 
 	ctx := r.Context()
 
-	// Clear store if requested
+	haul, storeArgs, err := h.resolveHaul(ctx, req.HaulID)
+	if err != nil {
+		http.Error(w, "Failed to resolve haul: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	// Clear this haul's store if requested.
 	if req.Clear {
-		if err := h.clearStore(ctx); err != nil {
+		if err := h.clearStore(haul.StoreDir); err != nil {
 			log.Printf("Error clearing store: %v", err)
 			http.Error(w, "Failed to clear store: "+err.Error(), http.StatusInternalServerError)
 			return
 		}
+		if _, err := h.JobRunner.DB().ExecContext(ctx, `DELETE FROM store_contents WHERE haul_id = ?`, haul.ID); err != nil {
+			log.Printf("Warning: failed to clear tracked contents for haul %d: %v", haul.ID, err)
+		}
 	}
 
-	// Determine filenames to load
+	// Determine archives to load. Bare filenames are resolved against the haul's
+	// archives directory; absolute paths are used as-is.
 	filenames := req.Filenames
 	if len(filenames) == 0 {
-		filenames = []string{"haul.tar.zst"}
+		http.Error(w, "at least one filename is required", http.StatusBadRequest)
+		return
+	}
+	resolved := make([]string, 0, len(filenames))
+	for _, f := range filenames {
+		if filepath.IsAbs(f) {
+			resolved = append(resolved, f)
+		} else {
+			resolved = append(resolved, filepath.Join(haul.ArchivesDir(), f))
+		}
 	}
 
 	// Build args for hauler store load command
 	args := []string{"store", "load"}
-	for _, f := range filenames {
+	for _, f := range resolved {
 		args = append(args, "-f", f)
 	}
+	args = append(args, storeArgs...)
 
-	// Create a job for the load operation
 	job, err := h.JobRunner.CreateJob(ctx, "hauler", args, nil)
 	if err != nil {
 		log.Printf("Error creating load job: %v", err)
 		http.Error(w, "Failed to create load job", http.StatusInternalServerError)
 		return
 	}
+	h.tagJobHaul(ctx, job.ID, haul.ID)
 
-	// The job processor will start the queued job automatically.
-	// Start a goroutine to track contents after completion.
-	jobID := job.ID // Capture job ID for goroutine
+	// After the load completes, track what landed in the store for this haul.
+	jobID := job.ID
 	go func() {
-		// Use background context since this runs after HTTP response is sent
 		bgCtx := context.Background()
-		// Wait for job to complete, then track contents
 		for {
 			time.Sleep(500 * time.Millisecond)
 			j, err := h.JobRunner.GetJob(bgCtx, jobID)
@@ -979,16 +809,14 @@ func (h *Handler) Load(w http.ResponseWriter, r *http.Request) {
 				log.Printf("Error getting job status %d: %v", jobID, err)
 				return
 			}
-
 			if j.Status == jobrunner.StatusSucceeded {
-				for _, haulFile := range filenames {
-					if err := h.trackStoreContents(bgCtx, haulFile); err != nil {
-						log.Printf("Warning: failed to track contents for %s: %v", haulFile, err)
+				for _, f := range filenames {
+					if err := h.trackStoreContents(bgCtx, haul, filepath.Base(f)); err != nil {
+						log.Printf("Warning: failed to track contents for %s: %v", f, err)
 					}
 				}
 				return
 			}
-
 			if j.Status == jobrunner.StatusFailed {
 				log.Printf("Load job %d failed, skipping tracking", jobID)
 				return
@@ -1002,12 +830,14 @@ func (h *Handler) Load(w http.ResponseWriter, r *http.Request) {
 		"jobId":     job.ID,
 		"message":   "Load job started",
 		"filenames": filenames,
-		"cleared":    req.Clear,
+		"cleared":   req.Clear,
+		"haulId":    haul.ID,
 	})
 }
 
 // CopyRequest represents the request to copy the store to a registry or directory
 type CopyRequest struct {
+	HaulID    int64  `json:"haulId,omitempty"`
 	Target    string `json:"target"`
 	Insecure  bool   `json:"insecure"`
 	PlainHTTP bool   `json:"plainHttp"`
@@ -1016,8 +846,9 @@ type CopyRequest struct {
 
 // RemoveRequest represents the request to remove artifacts from the store
 type RemoveRequest struct {
-	Match string `json:"match"`
-	Force bool   `json:"force"`
+	HaulID int64  `json:"haulId,omitempty"`
+	Match  string `json:"match"`
+	Force  bool   `json:"force"`
 }
 
 // Copy handles POST /api/store/copy
@@ -1044,6 +875,12 @@ func (h *Handler) Copy(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	haul, storeArgs, err := h.resolveHaul(r.Context(), req.HaulID)
+	if err != nil {
+		http.Error(w, "Failed to resolve haul: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+
 	// Build args for hauler store copy command
 	args := []string{"store", "copy", req.Target}
 
@@ -1062,27 +899,24 @@ func (h *Handler) Copy(w http.ResponseWriter, r *http.Request) {
 		args = append(args, "--only", req.Only)
 	}
 
-	// Create a job for the copy operation
+	// Scope to this haul's store.
+	args = append(args, storeArgs...)
+
 	job, err := h.JobRunner.CreateJob(r.Context(), "hauler", args, nil)
 	if err != nil {
 		log.Printf("Error creating copy job: %v", err)
 		http.Error(w, "Failed to create copy job", http.StatusInternalServerError)
 		return
 	}
-
-	// Start the job in background
-	go func() {
-		if err := h.JobRunner.Start(r.Context(), job.ID); err != nil {
-			log.Printf("Error starting copy job %d: %v", job.ID, err)
-		}
-	}()
+	h.tagJobHaul(r.Context(), job.ID, haul.ID)
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusAccepted)
 	_ = json.NewEncoder(w).Encode(map[string]interface{}{
-		"jobId":    job.ID,
-		"message":  "Copy job started",
-		"target":   req.Target,
+		"jobId":   job.ID,
+		"message": "Copy job started",
+		"target":  req.Target,
+		"haulId":  haul.ID,
 	})
 }
 
@@ -1104,6 +938,12 @@ func (h *Handler) Remove(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	haul, storeArgs, err := h.resolveHaul(r.Context(), req.HaulID)
+	if err != nil {
+		http.Error(w, "Failed to resolve haul: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+
 	// Build args for hauler store remove command
 	args := []string{"store", "remove", req.Match}
 
@@ -1112,28 +952,25 @@ func (h *Handler) Remove(w http.ResponseWriter, r *http.Request) {
 		args = append(args, "--force")
 	}
 
-	// Create a job for the remove operation
+	// Scope to this haul's store.
+	args = append(args, storeArgs...)
+
 	job, err := h.JobRunner.CreateJob(r.Context(), "hauler", args, nil)
 	if err != nil {
 		log.Printf("Error creating remove job: %v", err)
 		http.Error(w, "Failed to create remove job", http.StatusInternalServerError)
 		return
 	}
-
-	// Start the job in background
-	go func() {
-		if err := h.JobRunner.Start(r.Context(), job.ID); err != nil {
-			log.Printf("Error starting remove job %d: %v", job.ID, err)
-		}
-	}()
+	h.tagJobHaul(r.Context(), job.ID, haul.ID)
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusAccepted)
 	_ = json.NewEncoder(w).Encode(map[string]interface{}{
-		"jobId":    job.ID,
-		"message":  "Remove job started",
-		"match":    req.Match,
-		"force":    req.Force,
+		"jobId":   job.ID,
+		"message": "Remove job started",
+		"match":   req.Match,
+		"force":   req.Force,
+		"haulId":  haul.ID,
 	})
 }
 
@@ -1187,16 +1024,20 @@ func (h *Handler) GetInfo(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Build args for hauler store info command with JSON output
-	args := []string{"store", "info", "-o", "json"}
+	ctx := r.Context()
 
-	// Add store directory from config if available
-	if h.Cfg.HaulerStoreDir != "" {
-		args = append(args, "--store", h.Cfg.HaulerStoreDir)
+	// Resolve which haul's store to inspect.
+	haulID, _ := strconv.ParseInt(r.URL.Query().Get("haul"), 10, 64)
+	haul, _, err := h.resolveHaul(ctx, haulID)
+	if err != nil {
+		http.Error(w, "Failed to resolve haul: "+err.Error(), http.StatusBadRequest)
+		return
 	}
 
+	// Build args for hauler store info command with JSON output, scoped to the haul.
+	args := []string{"store", "info", "-o", "json", "--store", haul.StoreDir}
+
 	// Run hauler store info command directly
-	ctx := r.Context()
 	cmd := exec.CommandContext(ctx, "hauler", args...)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
@@ -1215,7 +1056,7 @@ func (h *Handler) GetInfo(w http.ResponseWriter, r *http.Request) {
 	nameSourceMap := make(map[string]string)
 
 	db := h.JobRunner.DB()
-	rows, err := db.QueryContext(ctx, `SELECT name, digest, source_haul FROM store_contents`)
+	rows, err := db.QueryContext(ctx, `SELECT name, digest, source_haul FROM store_contents WHERE haul_id = ?`, haul.ID)
 	if err == nil {
 		defer rows.Close()
 		for rows.Next() {
@@ -1311,19 +1152,8 @@ func (h *Handler) GetInfo(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(storeInfo)
 }
 
-// clearStore removes the store directory and recreates the OCI layout structure
-func (h *Handler) clearStore(ctx context.Context) error {
-	storeDir := h.Cfg.HaulerStoreDir
-	if storeDir == "" {
-		storeDir = filepath.Join(h.Cfg.DataDir, "store")
-	}
-
-	// Ensure required directories exist
-	tmpDir := filepath.Join(h.Cfg.DataDir, "tmp")
-	if err := os.MkdirAll(tmpDir, 0755); err != nil {
-		return fmt.Errorf("creating tmp directory: %w", err)
-	}
-
+// clearStore removes a haul's store directory and recreates the OCI layout structure
+func (h *Handler) clearStore(storeDir string) error {
 	// Remove the store directory
 	if err := os.RemoveAll(storeDir); err != nil {
 		return fmt.Errorf("removing store directory: %w", err)
@@ -1346,12 +1176,9 @@ func (h *Handler) clearStore(ctx context.Context) error {
 	return nil
 }
 
-// trackStoreContents adds entries to store_contents table for items from a haul
-func (h *Handler) trackStoreContents(ctx context.Context, haulFilename string) error {
-	storeDir := h.Cfg.HaulerStoreDir
-	if storeDir == "" {
-		storeDir = filepath.Join(h.Cfg.DataDir, "store")
-	}
+// trackStoreContents adds entries to store_contents table for items loaded into a haul
+func (h *Handler) trackStoreContents(ctx context.Context, haul *hauls.Haul, sourceArchive string) error {
+	storeDir := haul.StoreDir
 
 	// Parse the index.json to discover what's in the store
 	indexPath := filepath.Join(storeDir, "index.json")
@@ -1398,29 +1225,26 @@ func (h *Handler) trackStoreContents(ctx context.Context, haulFilename string) e
 		}
 
 		_, err = db.ExecContext(ctx, `
-			INSERT OR REPLACE INTO store_contents (content_type, name, digest, source_haul)
-			VALUES (?, ?, ?, ?)
-		`, contentType, name, manifest.Digest, haulFilename)
+			INSERT OR REPLACE INTO store_contents (haul_id, content_type, name, digest, source_haul)
+			VALUES (?, ?, ?, ?, ?)
+		`, haul.ID, contentType, name, manifest.Digest, sourceArchive)
 
 		if err != nil {
 			log.Printf("Error inserting store content %s: %v", name, err)
 		}
 	}
 
-	log.Printf("Tracked %d items from haul %s", len(index.Manifests), haulFilename)
+	log.Printf("Tracked %d items from archive %s into haul %d", len(index.Manifests), sourceArchive, haul.ID)
 	return nil
 }
 
-// rescanStore scans the store and rebuilds the store_contents table
-func (h *Handler) rescanStore(ctx context.Context) (int, error) {
-	storeDir := h.Cfg.HaulerStoreDir
-	if storeDir == "" {
-		storeDir = filepath.Join(h.Cfg.DataDir, "store")
-	}
+// rescanStore scans a haul's store and rebuilds its store_contents rows
+func (h *Handler) rescanStore(ctx context.Context, haul *hauls.Haul) (int, error) {
+	storeDir := haul.StoreDir
 
-	// Clear existing store_contents
+	// Clear existing store_contents for this haul
 	db := h.JobRunner.DB()
-	if _, err := db.ExecContext(ctx, "DELETE FROM store_contents"); err != nil {
+	if _, err := db.ExecContext(ctx, "DELETE FROM store_contents WHERE haul_id = ?", haul.ID); err != nil {
 		return 0, fmt.Errorf("clearing store_contents: %w", err)
 	}
 
@@ -1474,9 +1298,9 @@ func (h *Handler) rescanStore(ctx context.Context) (int, error) {
 		}
 
 		_, err = db.ExecContext(ctx, `
-			INSERT OR IGNORE INTO store_contents (content_type, name, digest, source_haul, loaded_at)
-			VALUES (?, ?, ?, NULL, datetime('now'))
-		`, contentType, manifest.Name, digest)
+			INSERT OR IGNORE INTO store_contents (haul_id, content_type, name, digest, source_haul, loaded_at)
+			VALUES (?, ?, ?, ?, NULL, datetime('now'))
+		`, haul.ID, contentType, manifest.Name, digest)
 
 		if err != nil {
 			log.Printf("Error inserting store content %s: %v", manifest.Name, err)
@@ -1496,7 +1320,14 @@ func (h *Handler) Rescan(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	count, err := h.rescanStore(r.Context())
+	haulID, _ := strconv.ParseInt(r.URL.Query().Get("haul"), 10, 64)
+	haul, _, err := h.resolveHaul(r.Context(), haulID)
+	if err != nil {
+		http.Error(w, "Failed to resolve haul: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	count, err := h.rescanStore(r.Context(), haul)
 	if err != nil {
 		log.Printf("Error rescanning store: %v", err)
 		http.Error(w, "Failed to rescan store: "+err.Error(), http.StatusInternalServerError)
@@ -1511,7 +1342,9 @@ func (h *Handler) Rescan(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// RegisterRoutes registers the store routes with the given mux
+// RegisterRoutes registers the store routes with the given mux. Operations are
+// scoped to a haul via a "haulId" field in the request body (or "?haul=" query
+// for reads); when omitted they fall back to the default haul.
 func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/store/info", h.GetInfo)
 	mux.HandleFunc("/api/store/add-image", h.AddImage)
@@ -1524,15 +1357,16 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/store/copy", h.Copy)
 	mux.HandleFunc("/api/store/remove", h.Remove)
 	mux.HandleFunc("/api/store/rescan", h.Rescan)
-	mux.HandleFunc("/api/store/hauls", h.ListHauls)
-	mux.HandleFunc("/api/store/hauls/upload", h.UploadHaul)
-	mux.HandleFunc("/api/store/hauls/", h.DeleteHaul)
-	mux.HandleFunc("/api/downloads/", h.ServeDownload)
+	mux.HandleFunc("/api/store/import", h.Import)
 }
 
-// UploadHaul handles POST /api/store/hauls/upload
-// Accepts a .tar.zst file upload and saves it to the data directory
-func (h *Handler) UploadHaul(w http.ResponseWriter, r *http.Request) {
+// Import handles POST /api/store/import. It accepts a .tar.zst upload, saves it
+// into the target haul's archives directory, and kicks off a load so the
+// archive's contents land in that haul's isolated store.
+//
+// Form fields: file (the archive), haulId (target haul), clear ("true" to wipe
+// the haul's store before loading).
+func (h *Handler) Import(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
@@ -1545,6 +1379,15 @@ func (h *Handler) UploadHaul(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	ctx := r.Context()
+	haulID, _ := strconv.ParseInt(r.FormValue("haulId"), 10, 64)
+	haul, storeArgs, err := h.resolveHaul(ctx, haulID)
+	if err != nil {
+		http.Error(w, "Failed to resolve haul: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	clear := r.FormValue("clear") == "true"
+
 	// Get the file from form
 	file, header, err := r.FormFile("file")
 	if err != nil {
@@ -1555,47 +1398,30 @@ func (h *Handler) UploadHaul(w http.ResponseWriter, r *http.Request) {
 	defer file.Close()
 
 	filename := header.Filename
-
-	// Validate filename has .tar.zst extension
 	if !strings.HasSuffix(strings.ToLower(filename), ".tar.zst") {
 		http.Error(w, "Only .tar.zst files are allowed", http.StatusBadRequest)
 		return
 	}
-
-	// Security: ensure filename doesn't contain path traversal
-	if strings.Contains(filename, "..") || strings.Contains(filename, "/") || strings.Contains(filename, "\\") {
+	if strings.Contains(filename, "..") || strings.ContainsAny(filename, "/\\") {
 		http.Error(w, "Invalid filename", http.StatusBadRequest)
 		return
 	}
 
-	// Ensure data directory exists
-	dataDir := h.Cfg.DataDir
-	if dataDir == "" {
-		dataDir = "."
-	}
-	if err := os.MkdirAll(dataDir, 0755); err != nil {
-		log.Printf("Error creating data directory: %v", err)
-		http.Error(w, "Failed to create data directory", http.StatusInternalServerError)
+	if err := os.MkdirAll(haul.ArchivesDir(), 0755); err != nil {
+		log.Printf("Error creating archives directory: %v", err)
+		http.Error(w, "Failed to create archives directory", http.StatusInternalServerError)
 		return
 	}
 
-	// Build the destination path
-	destinationPath := filepath.Join(dataDir, filename)
-
-	// Create the destination file
-	destFile, err := os.OpenFile(destinationPath, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0644)
+	destinationPath := filepath.Join(haul.ArchivesDir(), filename)
+	destFile, err := os.OpenFile(destinationPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
 	if err != nil {
-		if os.IsExist(err) {
-			http.Error(w, "A file with this name already exists", http.StatusConflict)
-		} else {
-			log.Printf("Error creating destination file: %v", err)
-			http.Error(w, "Failed to create file", http.StatusInternalServerError)
-		}
+		log.Printf("Error creating destination file: %v", err)
+		http.Error(w, "Failed to create file", http.StatusInternalServerError)
 		return
 	}
 	defer destFile.Close()
 
-	// Copy the uploaded file to destination
 	written, err := io.Copy(destFile, file)
 	if err != nil {
 		log.Printf("Error copying file: %v", err)
@@ -1603,14 +1429,58 @@ func (h *Handler) UploadHaul(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Failed to save file", http.StatusInternalServerError)
 		return
 	}
+	log.Printf("Imported archive into haul %d: %s (%d bytes)", haul.ID, filename, written)
 
-	log.Printf("Uploaded haul archive: %s (%d bytes)", filename, written)
+	// Optionally clear the haul's store before loading.
+	if clear {
+		if err := h.clearStore(haul.StoreDir); err != nil {
+			http.Error(w, "Failed to clear store: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		if _, err := h.JobRunner.DB().ExecContext(ctx, `DELETE FROM store_contents WHERE haul_id = ?`, haul.ID); err != nil {
+			log.Printf("Warning: failed to clear tracked contents for haul %d: %v", haul.ID, err)
+		}
+	}
+
+	// Kick off a load of the freshly uploaded archive into the haul's store.
+	args := []string{"store", "load", "-f", destinationPath}
+	args = append(args, storeArgs...)
+	job, err := h.JobRunner.CreateJob(ctx, "hauler", args, nil)
+	if err != nil {
+		log.Printf("Error creating load job: %v", err)
+		http.Error(w, "Failed to create load job", http.StatusInternalServerError)
+		return
+	}
+	h.tagJobHaul(ctx, job.ID, haul.ID)
+
+	jobID := job.ID
+	go func() {
+		bgCtx := context.Background()
+		for {
+			time.Sleep(500 * time.Millisecond)
+			j, err := h.JobRunner.GetJob(bgCtx, jobID)
+			if err != nil {
+				return
+			}
+			if j.Status == jobrunner.StatusSucceeded {
+				if err := h.trackStoreContents(bgCtx, haul, filename); err != nil {
+					log.Printf("Warning: failed to track contents for %s: %v", filename, err)
+				}
+				return
+			}
+			if j.Status == jobrunner.StatusFailed {
+				return
+			}
+		}
+	}()
 
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusCreated)
+	w.WriteHeader(http.StatusAccepted)
 	_ = json.NewEncoder(w).Encode(map[string]interface{}{
-		"message":  "File uploaded successfully",
+		"message":  "Archive imported, load started",
 		"filename": filename,
 		"size":     written,
+		"jobId":    job.ID,
+		"haulId":   haul.ID,
 	})
 }

@@ -1,9 +1,11 @@
 import { useState } from 'react'
 import { useNavigate, NavLink } from 'react-router-dom'
 import { useJobs } from '../App.jsx'
+import { useHauls } from '../contexts/HaulContext.jsx'
 
 function StoreRemove() {
   const { fetchJobs } = useJobs()
+  const { activeHaul } = useHauls()
   const navigate = useNavigate()
 
   // Store remove options
@@ -35,6 +37,8 @@ function StoreRemove() {
       }
 
       const requestPayload = {
+
+        haulId: activeHaul?.id,
         match: match,
         force: force || undefined,
       }

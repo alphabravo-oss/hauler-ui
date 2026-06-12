@@ -1,10 +1,12 @@
 import { useState, useEffect } from 'react'
 import { useNavigate, NavLink } from 'react-router-dom'
 import { useJobs } from '../App.jsx'
+import { useHauls } from '../contexts/HaulContext.jsx'
 import { Check, Upload } from 'lucide-react'
 
 function StoreExtract() {
   const { fetchJobs } = useJobs()
+  const { activeHaul } = useHauls()
   const navigate = useNavigate()
 
   // Extract options from hauler store extract --help
@@ -55,6 +57,7 @@ function StoreExtract() {
 
     try {
       const requestPayload = {
+        haulId: activeHaul?.id,
         artifactRef: artifactRef || undefined,
         outputDir: outputDir || undefined,
       }
