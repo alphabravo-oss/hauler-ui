@@ -1,10 +1,12 @@
 import { useState } from 'react'
 import { useNavigate, NavLink } from 'react-router-dom'
 import { useJobs } from '../App.jsx'
+import { useHauls } from '../contexts/HaulContext.jsx'
 import { Clipboard } from 'lucide-react'
 
 function StoreCopy() {
   const { fetchJobs } = useJobs()
+  const { activeHaul } = useHauls()
   const navigate = useNavigate()
 
   // Store copy options
@@ -43,6 +45,8 @@ function StoreCopy() {
       }
 
       const requestPayload = {
+
+        haulId: activeHaul?.id,
         target: target,
         insecure: insecure || undefined,
         plainHttp: plainHttp || undefined,

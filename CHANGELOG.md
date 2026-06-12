@@ -2,6 +2,36 @@
 
 All notable changes to Hauler UI will be documented in this file.
 
+## [Unreleased]
+
+### Changed — Multi-haul workspaces
+
+Reworked the core model so a **haul** is now a first-class, isolated workspace
+instead of a loose `.tar.zst` file. Multiple hauls can be built, edited, served,
+and archived side by side without clearing or merging a shared store.
+
+- **Isolated per-haul stores** — each haul owns its own OCI store directory
+  (`/data/hauls/<slug>/store`); operations never affect other hauls.
+- **Haul resource API** — `GET/POST /api/hauls`, `GET/PATCH/DELETE /api/hauls/{id}`,
+  and `GET /api/hauls/{id}/archives[/{file}]` for create/rename/delete plus
+  per-haul archive listing, download, and delete.
+- **Haul-scoped store operations** — add/sync/save/load/copy/remove/extract/info
+  and serve all accept a `haulId` (body) or `?haul=` (query) and target that
+  haul's store; they fall back to a seeded **Default** haul.
+- **Exact provenance** — store contents are tracked per haul, replacing the
+  digest/name-matching heuristic.
+- **Per-haul serving** — registry/fileserver servers bind to a haul's store, get
+  isolated backend directories, and are guarded against port collisions.
+- **New UI** — a Hauls list and a tabbed haul workspace (Overview, Contents,
+  Add Content, Archives, Serve) with an active-haul switcher in the top bar.
+- **Per-haul manifest library** — saved manifests are owned by a haul; names are
+  unique per haul and the Manifests page is scoped to the active haul.
+- **Live haul stats** — the Hauls list and switcher poll so item and archive
+  counts stay current after operations complete.
+- **Clearer paths** — the Store page and Settings now show the active haul's
+  isolated store directory and the per-haul hauls root instead of a single
+  global store path.
+
 ## [0.1.0-alpha] - 2025-01-28
 
 ### Added

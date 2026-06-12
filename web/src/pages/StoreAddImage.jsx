@@ -1,9 +1,11 @@
 import { useState } from 'react'
 import { useNavigate, NavLink } from 'react-router-dom'
 import { useJobs } from '../App.jsx'
+import { useHauls } from '../contexts/HaulContext.jsx'
 
 function StoreAddImage() {
   const { fetchJobs } = useJobs()
+  const { activeHaul } = useHauls()
   const navigate = useNavigate()
 
   const [imageRef, setImageRef] = useState('')
@@ -31,6 +33,7 @@ function StoreAddImage() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          haulId: activeHaul?.id,
           imageRef,
           platform: platform || undefined,
           key: key || undefined,

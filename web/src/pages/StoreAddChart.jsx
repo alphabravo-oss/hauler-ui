@@ -1,9 +1,11 @@
 import { useState, useEffect } from 'react'
 import { useNavigate, NavLink } from 'react-router-dom'
 import { useJobs } from '../App.jsx'
+import { useHauls } from '../contexts/HaulContext.jsx'
 
 function StoreAddChart() {
   const { fetchJobs } = useJobs()
+  const { activeHaul } = useHauls()
   const navigate = useNavigate()
 
   const [name, setName] = useState('')
@@ -60,6 +62,7 @@ function StoreAddChart() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          haulId: activeHaul?.id,
           name,
           repoUrl: repoUrl || undefined,
           version: version || undefined,

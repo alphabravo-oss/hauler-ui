@@ -7,26 +7,22 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	_ "modernc.org/sqlite"
 
 	"github.com/hauler-ui/hauler-ui/backend/internal/config"
+	"github.com/hauler-ui/hauler-ui/backend/internal/hauls"
 	"github.com/hauler-ui/hauler-ui/backend/internal/jobrunner"
 )
 
 func setupTestHandler(t *testing.T) (*Handler, *sql.DB) {
 	t.Helper()
 
-	f, err := os.CreateTemp("", "testdb-*.db")
-	if err != nil {
-		t.Fatalf("creating temp file: %v", err)
-	}
-	defer f.Close()
-	name := f.Name()
-	t.Cleanup(func() { os.Remove(name) })
+	dataDir := t.TempDir()
+	name := filepath.Join(dataDir, "test.db")
 
 	db, err := sql.Open("sqlite", name)
 	if err != nil {
@@ -34,7 +30,7 @@ func setupTestHandler(t *testing.T) (*Handler, *sql.DB) {
 	}
 	t.Cleanup(func() { db.Close() })
 
-	// Create schema
+	// Create the subset of schema the store handler relies on.
 	_, err = db.Exec(`
 		CREATE TABLE IF NOT EXISTS jobs (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -46,7 +42,8 @@ func setupTestHandler(t *testing.T) (*Handler, *sql.DB) {
 			started_at DATETIME,
 			completed_at DATETIME,
 			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-			result TEXT
+			result TEXT,
+			haul_id INTEGER
 		);
 
 		CREATE TABLE IF NOT EXISTS job_logs (
@@ -59,20 +56,56 @@ func setupTestHandler(t *testing.T) (*Handler, *sql.DB) {
 		);
 
 		CREATE INDEX IF NOT EXISTS idx_job_logs_job_id ON job_logs(job_id, timestamp);
+
+		CREATE TABLE IF NOT EXISTS hauls (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			name TEXT NOT NULL UNIQUE,
+			slug TEXT NOT NULL UNIQUE,
+			description TEXT,
+			store_dir TEXT NOT NULL,
+			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+		);
+
+		CREATE TABLE IF NOT EXISTS store_contents (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			haul_id INTEGER,
+			content_type TEXT NOT NULL,
+			name TEXT NOT NULL,
+			digest TEXT,
+			source_haul TEXT,
+			loaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+			UNIQUE(haul_id, content_type, name, digest)
+		);
 	`)
 	if err != nil {
 		t.Fatalf("creating schema: %v", err)
 	}
 
 	cfg := &config.Config{
-		HaulerTempDir: os.TempDir(),
-		DataDir:       os.TempDir(),
+		HaulerTempDir: filepath.Join(dataDir, "tmp"),
+		DataDir:       dataDir,
 	}
 
 	runner := jobrunner.New(db)
-	handler := NewHandler(runner, cfg)
+	haulSvc := hauls.NewService(db, cfg)
+	if _, err := haulSvc.EnsureDefault(context.Background()); err != nil {
+		t.Fatalf("ensuring default haul: %v", err)
+	}
+	handler := NewHandler(runner, cfg, haulSvc)
 
 	return handler, db
+}
+
+// defaultStoreDir returns the store directory of the default haul created by
+// setupTestHandler, used to assert the trailing "--store <dir>" args.
+func defaultStoreDir(t *testing.T, h *Handler) string {
+	t.Helper()
+	haul, err := h.Hauls.EnsureDefault(context.Background())
+	if err != nil {
+		t.Fatalf("resolving default haul: %v", err)
+	}
+	return haul.StoreDir
 }
 
 func TestCopyHandler_InvalidMethod(t *testing.T) {
@@ -169,9 +202,9 @@ func TestCopyHandler_ValidRegistryTarget(t *testing.T) {
 		t.Errorf("expected command 'hauler', got %q", job.Command)
 	}
 
-	expectedArgs := []string{"store", "copy", "registry://docker.io/my-org", "--insecure", "--only", "sig"}
+	expectedArgs := []string{"store", "copy", "registry://docker.io/my-org", "--insecure", "--only", "sig", "--store", defaultStoreDir(t, handler)}
 	if len(job.Args) != len(expectedArgs) {
-		t.Errorf("expected %d args, got %d", len(expectedArgs), len(job.Args))
+		t.Errorf("expected %d args, got %d (%v)", len(expectedArgs), len(job.Args), job.Args)
 	} else {
 		for i, arg := range expectedArgs {
 			if job.Args[i] != arg {
@@ -219,9 +252,9 @@ func TestCopyHandler_ValidDirTarget(t *testing.T) {
 		t.Fatalf("getting job: %v", err)
 	}
 
-	expectedArgs := []string{"store", "copy", "dir:///data/export"}
+	expectedArgs := []string{"store", "copy", "dir:///data/export", "--store", defaultStoreDir(t, handler)}
 	if len(job.Args) != len(expectedArgs) {
-		t.Errorf("expected %d args, got %d", len(expectedArgs), len(job.Args))
+		t.Errorf("expected %d args, got %d (%v)", len(expectedArgs), len(job.Args), job.Args)
 	} else {
 		for i, arg := range expectedArgs {
 			if job.Args[i] != arg {

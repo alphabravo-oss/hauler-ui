@@ -1,10 +1,12 @@
 import { useState, useEffect } from 'react'
 import { useNavigate, NavLink } from 'react-router-dom'
 import { useJobs } from '../App.jsx'
+import { useHauls } from '../contexts/HaulContext.jsx'
 import { Check, Save } from 'lucide-react'
 
 function StoreSave() {
   const { fetchJobs } = useJobs()
+  const { activeHaul } = useHauls()
   const navigate = useNavigate()
 
   // Save options from hauler store save --help
@@ -56,6 +58,7 @@ function StoreSave() {
 
     try {
       const requestPayload = {
+        haulId: activeHaul?.id,
         filename: filename || undefined,
         platform: platform || undefined,
         containerd: containerd || undefined,

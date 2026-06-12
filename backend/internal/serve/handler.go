@@ -1,6 +1,7 @@
 package serve
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"fmt"
@@ -9,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -18,12 +20,14 @@ import (
 	_ "modernc.org/sqlite"
 
 	"github.com/hauler-ui/hauler-ui/backend/internal/config"
+	"github.com/hauler-ui/hauler-ui/backend/internal/hauls"
 )
 
 // Handler handles HTTP requests for serve operations
 type Handler struct {
 	cfg         *config.Config
 	db          *sql.DB
+	hauls       *hauls.Service
 	processes   map[int]*managedProcess
 	certManager *CertManager
 	mu          sync.RWMutex
@@ -38,17 +42,34 @@ type managedProcess struct {
 }
 
 // NewHandler creates a new serve handler
-func NewHandler(cfg *config.Config, db *sql.DB) *Handler {
+func NewHandler(cfg *config.Config, db *sql.DB, haulSvc *hauls.Service) *Handler {
 	return &Handler{
 		cfg:         cfg,
 		db:          db,
+		hauls:       haulSvc,
 		processes:   make(map[int]*managedProcess),
 		certManager: NewCertManager(cfg.DataDir),
 	}
 }
 
+// resolveHaul returns the haul to serve, defaulting to the default haul.
+func (h *Handler) resolveHaul(ctx context.Context, haulID int64) (*hauls.Haul, error) {
+	if haulID > 0 {
+		return h.hauls.Get(ctx, haulID)
+	}
+	return h.hauls.EnsureDefault(ctx)
+}
+
+// portInUse reports whether a serve process is already running on the port.
+func (h *Handler) portInUse(port int) bool {
+	var count int
+	_ = h.db.QueryRow(`SELECT COUNT(1) FROM serve_processes WHERE port = ? AND status = 'running'`, port).Scan(&count)
+	return count > 0
+}
+
 // ServeRegistryRequest represents the request to start a registry serve
 type ServeRegistryRequest struct {
+	HaulID     int64  `json:"haulId,omitempty"`
 	Port       int    `json:"port,omitempty"`
 	Readonly   bool   `json:"readonly,omitempty"`
 	TLSCert    string `json:"tlsCert,omitempty"`
@@ -60,6 +81,7 @@ type ServeRegistryRequest struct {
 
 // ServeFileserverRequest represents the request to start a fileserver serve
 type ServeFileserverRequest struct {
+	HaulID    int64  `json:"haulId,omitempty"`
 	Port      int    `json:"port,omitempty"`
 	Timeout   int    `json:"timeout,omitempty"`
 	TLSCert   string `json:"tlsCert,omitempty"`
@@ -81,20 +103,39 @@ func (h *Handler) ServeRegistry(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Resolve which haul's store to serve.
+	haul, err := h.resolveHaul(r.Context(), req.HaulID)
+	if err != nil {
+		http.Error(w, "Failed to resolve haul: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+
 	// Set default port
 	port := req.Port
 	if port == 0 {
 		port = 5000
 	}
 
-	// Build args for hauler store serve registry command
-	args := []string{"store", "serve", "registry", "--port", strconv.Itoa(port)}
+	// Prevent port collisions across concurrently served hauls.
+	if h.portInUse(port) {
+		http.Error(w, fmt.Sprintf("Port %d is already in use by another serve process", port), http.StatusConflict)
+		return
+	}
 
-	// Readonly flag (default true)
-	if !req.Readonly {
-		args = append(args, "--read-only=false")
+	// Build args for hauler store serve registry command, scoped to the haul.
+	args := []string{"store", "serve", "registry", "--port", strconv.Itoa(port), "--store", haul.StoreDir}
+
+	// Give each haul its own registry backend directory so multiple registries
+	// can run side by side without clobbering each other.
+	if req.Directory == "" {
+		req.Directory = filepath.Join(filepath.Dir(haul.StoreDir), "registry")
+	}
+
+	// Readonly flag (hauler default is true)
+	if req.Readonly {
+		args = append(args, "--readonly")
 	} else {
-		args = append(args, "--read-only=true")
+		args = append(args, "--readonly=false")
 	}
 
 	// Handle TLS configuration
@@ -173,9 +214,9 @@ func (h *Handler) ServeRegistry(w http.ResponseWriter, r *http.Request) {
 	// Store in database
 	argsJSON, _ := json.Marshal(req)
 	_, err = h.db.Exec(`
-		INSERT INTO serve_processes (serve_type, pid, port, args, status)
-		VALUES (?, ?, ?, ?, ?)
-	`, "registry", pid, port, string(argsJSON), "running")
+		INSERT INTO serve_processes (serve_type, pid, port, args, status, haul_id)
+		VALUES (?, ?, ?, ?, ?, ?)
+	`, "registry", pid, port, string(argsJSON), "running", haul.ID)
 	if err != nil {
 		log.Printf("Error storing serve process in database: %v", err)
 	}
@@ -188,6 +229,7 @@ func (h *Handler) ServeRegistry(w http.ResponseWriter, r *http.Request) {
 		"status":    "running",
 		"startedAt": managedProc.StartedAt.Format(time.RFC3339),
 		"message":   "Registry serve started",
+		"haulId":    haul.ID,
 	})
 }
 
@@ -386,36 +428,52 @@ func (h *Handler) ListRegistryProcesses(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	rows, err := h.db.Query(`
-		SELECT id, serve_type, pid, port, args, status, started_at, stopped_at, exit_reason
-		FROM serve_processes
-		WHERE serve_type = 'registry'
-		ORDER BY started_at DESC
-	`)
+	processes, err := h.queryProcesses("registry", r.URL.Query().Get("haul"))
 	if err != nil {
 		http.Error(w, "Query error", http.StatusInternalServerError)
 		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(processes)
+}
+
+// queryProcesses returns serve processes of a given type, optionally filtered by
+// haul id, including the haul each process is bound to.
+func (h *Handler) queryProcesses(serveType, haulFilter string) ([]map[string]interface{}, error) {
+	query := `
+		SELECT id, serve_type, pid, port, args, status, started_at, stopped_at, exit_reason, haul_id
+		FROM serve_processes
+		WHERE serve_type = ?`
+	queryArgs := []interface{}{serveType}
+	if haulFilter != "" {
+		if haulID, err := strconv.ParseInt(haulFilter, 10, 64); err == nil {
+			query += ` AND haul_id = ?`
+			queryArgs = append(queryArgs, haulID)
+		}
+	}
+	query += ` ORDER BY started_at DESC`
+
+	rows, err := h.db.Query(query, queryArgs...)
+	if err != nil {
+		return nil, err
 	}
 	defer rows.Close()
 
 	processes := []map[string]interface{}{}
 	for rows.Next() {
-		var id int
-		var serveType string
-		var pid int
-		var port int
-		var argsJSON string
-		var status string
-		var startedAt, stoppedAt sql.NullString
-		var exitReason sql.NullString
+		var id, pid, port int
+		var st, argsJSON, status string
+		var startedAt, stoppedAt, exitReason sql.NullString
+		var haulID sql.NullInt64
 
-		if err := rows.Scan(&id, &serveType, &pid, &port, &argsJSON, &status, &startedAt, &stoppedAt, &exitReason); err != nil {
+		if err := rows.Scan(&id, &st, &pid, &port, &argsJSON, &status, &startedAt, &stoppedAt, &exitReason, &haulID); err != nil {
 			continue
 		}
 
 		proc := map[string]interface{}{
 			"id":         id,
-			"serveType":  serveType,
+			"serveType":  st,
 			"pid":        pid,
 			"port":       port,
 			"status":     status,
@@ -423,18 +481,17 @@ func (h *Handler) ListRegistryProcesses(w http.ResponseWriter, r *http.Request) 
 			"stoppedAt":  stoppedAt.String,
 			"exitReason": exitReason.String,
 		}
-
+		if haulID.Valid {
+			proc["haulId"] = haulID.Int64
+		}
 		if argsJSON != "" {
 			var args map[string]interface{}
 			_ = json.Unmarshal([]byte(argsJSON), &args)
 			proc["args"] = args
 		}
-
 		processes = append(processes, proc)
 	}
-
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(processes)
+	return processes, rows.Err()
 }
 
 // ServeFileserver handles POST /api/serve/fileserver
@@ -450,14 +507,27 @@ func (h *Handler) ServeFileserver(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Resolve which haul's store to serve.
+	haul, err := h.resolveHaul(r.Context(), req.HaulID)
+	if err != nil {
+		http.Error(w, "Failed to resolve haul: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+
 	// Set default port
 	port := req.Port
 	if port == 0 {
 		port = 8080
 	}
 
-	// Build args for hauler store serve fileserver command
-	args := []string{"store", "serve", "fileserver", "--port", strconv.Itoa(port)}
+	// Prevent port collisions across concurrently served hauls.
+	if h.portInUse(port) {
+		http.Error(w, fmt.Sprintf("Port %d is already in use by another serve process", port), http.StatusConflict)
+		return
+	}
+
+	// Build args for hauler store serve fileserver command, scoped to the haul.
+	args := []string{"store", "serve", "fileserver", "--port", strconv.Itoa(port), "--store", haul.StoreDir}
 
 	// Optional timeout
 	if req.Timeout > 0 {
@@ -535,9 +605,9 @@ func (h *Handler) ServeFileserver(w http.ResponseWriter, r *http.Request) {
 	// Store in database
 	argsJSON, _ := json.Marshal(req)
 	_, err = h.db.Exec(`
-		INSERT INTO serve_processes (serve_type, pid, port, args, status)
-		VALUES (?, ?, ?, ?, ?)
-	`, "fileserver", pid, port, string(argsJSON), "running")
+		INSERT INTO serve_processes (serve_type, pid, port, args, status, haul_id)
+		VALUES (?, ?, ?, ?, ?, ?)
+	`, "fileserver", pid, port, string(argsJSON), "running", haul.ID)
 	if err != nil {
 		log.Printf("Error storing serve process in database: %v", err)
 	}
@@ -550,6 +620,7 @@ func (h *Handler) ServeFileserver(w http.ResponseWriter, r *http.Request) {
 		"status":    "running",
 		"startedAt": managedProc.StartedAt.Format(time.RFC3339),
 		"message":   "Fileserver serve started",
+		"haulId":    haul.ID,
 	})
 }
 
@@ -709,51 +780,10 @@ func (h *Handler) ListFileserverProcesses(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	rows, err := h.db.Query(`
-		SELECT id, serve_type, pid, port, args, status, started_at, stopped_at, exit_reason
-		FROM serve_processes
-		WHERE serve_type = 'fileserver'
-		ORDER BY started_at DESC
-	`)
+	processes, err := h.queryProcesses("fileserver", r.URL.Query().Get("haul"))
 	if err != nil {
 		http.Error(w, "Query error", http.StatusInternalServerError)
 		return
-	}
-	defer rows.Close()
-
-	processes := []map[string]interface{}{}
-	for rows.Next() {
-		var id int
-		var serveType string
-		var pid int
-		var port int
-		var argsJSON string
-		var status string
-		var startedAt, stoppedAt sql.NullString
-		var exitReason sql.NullString
-
-		if err := rows.Scan(&id, &serveType, &pid, &port, &argsJSON, &status, &startedAt, &stoppedAt, &exitReason); err != nil {
-			continue
-		}
-
-		proc := map[string]interface{}{
-			"id":         id,
-			"serveType":  serveType,
-			"pid":        pid,
-			"port":       port,
-			"status":     status,
-			"startedAt":  startedAt.String,
-			"stoppedAt":  stoppedAt.String,
-			"exitReason": exitReason.String,
-		}
-
-		if argsJSON != "" {
-			var args map[string]interface{}
-			_ = json.Unmarshal([]byte(argsJSON), &args)
-			proc["args"] = args
-		}
-
-		processes = append(processes, proc)
 	}
 
 	w.Header().Set("Content-Type", "application/json")

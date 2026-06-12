@@ -1,8 +1,10 @@
 import { useState, useEffect } from 'react'
 import { NavLink } from 'react-router-dom'
 import { Image, BarChart3, FileText, RefreshCw, Search, Package, Folder, FileText as FileIcon } from 'lucide-react'
+import { useHauls } from '../contexts/HaulContext.jsx'
 
 function StoreContents() {
+  const { activeHaul } = useHauls()
   const [storeInfo, setStoreInfo] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
@@ -14,7 +16,8 @@ function StoreContents() {
 
   const fetchStoreInfo = async () => {
     try {
-      const res = await fetch('/api/store/info')
+      const haulQuery = activeHaul ? `?haul=${activeHaul.id}` : ''
+      const res = await fetch(`/api/store/info${haulQuery}`)
       if (res.ok) {
         const data = await res.json()
         setStoreInfo(data)
@@ -34,7 +37,8 @@ function StoreContents() {
     setRescanning(true)
     setRescanMessage(null)
     try {
-      const res = await fetch('/api/store/rescan', { method: 'POST' })
+      const haulQuery = activeHaul ? `?haul=${activeHaul.id}` : ''
+      const res = await fetch(`/api/store/rescan${haulQuery}`, { method: 'POST' })
       if (res.ok) {
         const data = await res.json()
         setRescanMessage({ type: 'success', text: data.message || `Rescan complete: tracked ${data.itemsFound} items` })
@@ -52,15 +56,18 @@ function StoreContents() {
   }
 
   useEffect(() => {
+    setLoading(true)
     fetchStoreInfo()
-  }, [])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeHaul?.id])
 
   // Auto-refresh every 30 seconds if enabled
   useEffect(() => {
     if (!autoRefresh) return
     const interval = setInterval(fetchStoreInfo, 30000)
     return () => clearInterval(interval)
-  }, [autoRefresh])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoRefresh, activeHaul?.id])
 
   const handleRefresh = () => {
     setLoading(true)
@@ -341,7 +348,7 @@ function StoreContents() {
           </p>
           <p style={{ marginBottom: '0.5rem' }}>
             <strong>Source Haul:</strong> Shows which archive file each item was loaded from.
-            Items loaded before tracking was enabled show "Before tracking". Use the <strong>Rescan</strong> button
+            Items loaded before tracking was enabled show &quot;Before tracking&quot;. Use the <strong>Rescan</strong> button
             to rebuild this information from the current store contents.
           </p>
           <p>

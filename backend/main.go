@@ -11,6 +11,7 @@ import (
 	"github.com/hauler-ui/hauler-ui/backend/internal/auth"
 	"github.com/hauler-ui/hauler-ui/backend/internal/config"
 	"github.com/hauler-ui/hauler-ui/backend/internal/hauler"
+	"github.com/hauler-ui/hauler-ui/backend/internal/hauls"
 	"github.com/hauler-ui/hauler-ui/backend/internal/jobrunner"
 	"github.com/hauler-ui/hauler-ui/backend/internal/manifests"
 	"github.com/hauler-ui/hauler-ui/backend/internal/registry"
@@ -93,14 +94,21 @@ func main() {
 	// Initialize registry handler
 	registryHandler := registry.NewHandler(jobRunner, cfg)
 
+	// Initialize haul service and ensure a default haul exists on first boot
+	haulService := hauls.NewService(db.DB, cfg)
+	if _, err := haulService.EnsureDefault(context.Background()); err != nil {
+		log.Printf("Warning: failed to ensure default haul: %v", err)
+	}
+	haulsHandler := hauls.NewHandler(haulService)
+
 	// Initialize store handler
-	storeHandler := store.NewHandler(jobRunner, cfg)
+	storeHandler := store.NewHandler(jobRunner, cfg, haulService)
 
 	// Initialize manifests handler
-	manifestsHandler := manifests.NewHandler(db.DB)
+	manifestsHandler := manifests.NewHandler(db.DB, haulService)
 
 	// Initialize serve handler
-	serveHandler := serve.NewHandler(cfg, db.DB)
+	serveHandler := serve.NewHandler(cfg, db.DB, haulService)
 
 	// Initialize settings handler
 	settingsHandler := settings.NewHandler(db.DB)
@@ -122,6 +130,9 @@ func main() {
 
 	// Registry endpoints
 	registryHandler.RegisterRoutes(mux)
+
+	// Haul endpoints
+	haulsHandler.RegisterRoutes(mux)
 
 	// Store endpoints
 	storeHandler.RegisterRoutes(mux)

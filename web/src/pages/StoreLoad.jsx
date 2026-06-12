@@ -1,10 +1,12 @@
 import { useState } from 'react'
 import { useNavigate, NavLink } from 'react-router-dom'
 import { useJobs } from '../App.jsx'
+import { useHauls } from '../contexts/HaulContext.jsx'
 import { AlertTriangle, X, Download, Check, AlertCircle } from 'lucide-react'
 
 function StoreLoad() {
   const { fetchJobs } = useJobs()
+  const { activeHaul } = useHauls()
   const navigate = useNavigate()
 
   // Multiple filenames list (for -f flag)
@@ -63,6 +65,8 @@ function StoreLoad() {
       }
 
       const requestPayload = {
+
+        haulId: activeHaul?.id,
         filenames: validFiles,
         clear: clearStore
       }

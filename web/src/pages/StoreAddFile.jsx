@@ -1,9 +1,11 @@
 import { useState } from 'react'
 import { useNavigate, NavLink } from 'react-router-dom'
 import { useJobs } from '../App.jsx'
+import { useHauls } from '../contexts/HaulContext.jsx'
 
 function StoreAddFile() {
   const { fetchJobs } = useJobs()
+  const { activeHaul } = useHauls()
   const navigate = useNavigate()
 
   const [filePath, setFilePath] = useState('')
@@ -35,6 +37,7 @@ function StoreAddFile() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          haulId: activeHaul?.id,
           filePath: filePath || undefined,
           url: url || undefined,
           name: name || undefined
