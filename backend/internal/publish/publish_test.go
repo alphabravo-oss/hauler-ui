@@ -116,29 +116,23 @@ func TestHostnameFor(t *testing.T) {
 }
 
 func TestResolveHost(t *testing.T) {
+	// resolveHost matches against the desired (published) host set, whether or
+	// not the backing registry is currently running.
 	m := &Manager{
-		byHaul: map[int64]*published{
-			1: {HaulID: 1, Slug: "demo", Hostname: "demo.example.com", Port: 5001},
-		},
+		desiredHost: map[string]int64{"demo.example.com": 1},
 	}
 
 	t.Run("strips port suffix and matches", func(t *testing.T) {
-		p, ok := m.resolveHost("demo.example.com:8443")
-		if !ok {
-			t.Fatalf("expected host to resolve")
-		}
-		if p.HaulID != 1 {
-			t.Fatalf("expected haul 1, got %d", p.HaulID)
+		id, ok := m.resolveHost("demo.example.com:8443")
+		if !ok || id != 1 {
+			t.Fatalf("expected haul 1 to resolve, got id=%d ok=%v", id, ok)
 		}
 	})
 
 	t.Run("case-insensitive match", func(t *testing.T) {
-		p, ok := m.resolveHost("DEMO.Example.COM")
-		if !ok {
-			t.Fatalf("expected case-insensitive match")
-		}
-		if p.HaulID != 1 {
-			t.Fatalf("expected haul 1, got %d", p.HaulID)
+		id, ok := m.resolveHost("DEMO.Example.COM")
+		if !ok || id != 1 {
+			t.Fatalf("expected case-insensitive match to haul 1, got id=%d ok=%v", id, ok)
 		}
 	})
 
@@ -149,8 +143,8 @@ func TestResolveHost(t *testing.T) {
 	})
 
 	t.Run("unknown host -> ok=false", func(t *testing.T) {
-		if p, ok := m.resolveHost("unknown.example.com"); ok || p != nil {
-			t.Fatalf("expected unknown host to not resolve, got ok=%v p=%v", ok, p)
+		if id, ok := m.resolveHost("unknown.example.com"); ok || id != 0 {
+			t.Fatalf("expected unknown host to not resolve, got ok=%v id=%d", ok, id)
 		}
 	})
 }
