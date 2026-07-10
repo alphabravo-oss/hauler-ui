@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useNavigate, NavLink } from 'react-router-dom'
-import { useJobs } from '../App.jsx'
+import { useJobs } from '../contexts/JobsContext.jsx'
 import { useHauls } from '../contexts/HaulContext.jsx'
 import { Check, Save } from 'lucide-react'
 
