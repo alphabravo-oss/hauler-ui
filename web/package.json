@@ -11,12 +11,15 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "js-yaml": "^4.1.1",
+    "js-yaml": "^4.3.0",
     "lucide-react": "^0.563.0",
     "monaco-editor": "^0.55.1",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
     "react-router-dom": "^7.17.0"
+  },
+  "overrides": {
+    "dompurify": "^3.4.11"
   },
   "devDependencies": {
     "@eslint/js": "^9.21.0",
