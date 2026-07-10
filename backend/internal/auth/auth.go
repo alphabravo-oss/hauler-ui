@@ -152,6 +152,7 @@ func isPublicPath(path string) bool {
 		"/api/auth/login",
 		"/healthz",
 		"/readyz",
+		"/metrics",
 		"/api/config",
 		"/h/", // published haul files are served to air-gap consumers without a UI session
 	}

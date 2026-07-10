@@ -19,6 +19,7 @@ import (
 	"github.com/hauler-ui/hauler-ui/backend/internal/hauls"
 	"github.com/hauler-ui/hauler-ui/backend/internal/jobrunner"
 	"github.com/hauler-ui/hauler-ui/backend/internal/manifests"
+	"github.com/hauler-ui/hauler-ui/backend/internal/obs"
 	"github.com/hauler-ui/hauler-ui/backend/internal/publish"
 	"github.com/hauler-ui/hauler-ui/backend/internal/registry"
 	"github.com/hauler-ui/hauler-ui/backend/internal/serve"
@@ -39,8 +40,9 @@ func maxConcurrentJobs() int {
 }
 
 // startJobProcessor starts a background goroutine that processes queued jobs,
-// honoring a concurrency limit.
-func startJobProcessor(runner *jobrunner.Runner, stopCh <-chan struct{}) {
+// honoring a concurrency limit. Each tick it also refreshes the job and
+// published-haul gauges for the metrics endpoint.
+func startJobProcessor(runner *jobrunner.Runner, pm *publish.Manager, stopCh <-chan struct{}) {
 	ctx := context.Background()
 	limit := maxConcurrentJobs()
 
@@ -61,13 +63,18 @@ func startJobProcessor(runner *jobrunner.Runner, stopCh <-chan struct{}) {
 					continue
 				}
 
-				// Count what is already running and only fill up to the limit.
-				running := 0
+				// Count current job states for the concurrency limit and metrics.
+				running, queued := 0, 0
 				for _, job := range jobs {
-					if job.Status == jobrunner.StatusRunning {
+					switch job.Status {
+					case jobrunner.StatusRunning:
 						running++
+					case jobrunner.StatusQueued:
+						queued++
 					}
 				}
+				obs.SetJobs(queued, running)
+				obs.SetPublishedHauls(len(pm.List(ctx)))
 
 				for _, job := range jobs {
 					if running >= limit {
@@ -105,6 +112,10 @@ func cleanupOnBoot(db *sql.DB) {
 }
 
 func main() {
+	// Configure structured logging first so every subsequent log line (including
+	// those from the stdlib log package) is emitted as structured records.
+	obs.Setup()
+
 	cfg := config.Load()
 
 	// Initialize SQLite database
@@ -122,10 +133,10 @@ func main() {
 	jobRunner := jobrunner.New(db.DB, cfg.DataDir)
 	jobHandler := jobrunner.NewHandler(jobRunner, cfg)
 
-	// Start background job processor
+	// The background job processor is started later, once the publish manager
+	// exists, so it can also report published-haul metrics.
 	stopCh := make(chan struct{})
 	defer close(stopCh)
-	startJobProcessor(jobRunner, stopCh)
 
 	// Initialize hauler detector
 	haulerBinary := getEnv("HAULER_BINARY", "hauler")
@@ -156,6 +167,9 @@ func main() {
 	publishHandler := publish.NewHandler(publishManager, haulService)
 	publishManager.RestoreOnBoot(context.Background())
 
+	// Now that the publish manager exists, start the background job processor.
+	startJobProcessor(jobRunner, publishManager, stopCh)
+
 	// Initialize settings handler
 	settingsHandler := settings.NewHandler(db.DB)
 
@@ -167,6 +181,7 @@ func main() {
 
 	mux.HandleFunc("/healthz", healthzHandler)
 	mux.HandleFunc("/readyz", readyzHandler(db.DB, haulerBinary))
+	mux.Handle("/metrics", obs.MetricsHandler())
 	mux.HandleFunc("/api/config", configHandler(cfg))
 
 	// Auth endpoints (public)
@@ -255,12 +270,13 @@ func main() {
 		http.ServeFile(w, r, "./web/favicon.svg")
 	})
 
-	// Wrap mux with auth middleware
-	handlerWithAuth := authManager.Middleware(mux)
+	// Wrap mux with auth middleware, then instrument the whole chain so metrics
+	// and access logs capture every request (including auth rejections).
+	handler := obs.Instrument(authManager.Middleware(mux))
 
 	server := &http.Server{
 		Addr:        ":8080",
-		Handler:     handlerWithAuth,
+		Handler:     handler,
 		ReadTimeout: 5 * time.Second,
 	}
 
