@@ -16,7 +16,7 @@
     "monaco-editor": "^0.55.1",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
-    "react-router-dom": "^7.17.0"
+    "react-router-dom": "^7.18.1"
   },
   "overrides": {
     "dompurify": "^3.4.11"
