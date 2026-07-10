@@ -26,7 +26,9 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/publish", h.handleList)    // GET routes + config
 	mux.HandleFunc("/api/publish/tls", h.handleTLS) // GET/POST/DELETE registry cert
 	mux.HandleFunc("/api/publish/", h.handleByID)   // POST/DELETE /api/publish/{haulId}
-	mux.HandleFunc("/h/", h.handleFiles)            // GET /h/{slug}[/{name}]
+	// /h/ file pulls are guarded by the same optional Basic auth as the
+	// registry listener (no-op when creds are unset).
+	mux.Handle("/h/", h.mgr.requireAuth(http.HandlerFunc(h.handleFiles))) // GET /h/{slug}[/{name}]
 }
 
 type tlsRequest struct {

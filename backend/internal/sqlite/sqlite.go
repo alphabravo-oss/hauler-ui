@@ -28,7 +28,15 @@ func Open(path string) (*DB, error) {
 		return nil, fmt.Errorf("creating database directory: %w", err)
 	}
 
-	db, err := sql.Open("sqlite", path)
+	// WAL journaling + a busy_timeout reduce "database is locked" errors when a
+	// read overlaps a write; the single writer is still enforced by MaxOpenConns=1
+	// below. foreign_keys(ON) enforces FK constraints, which SQLite disables by
+	// default. modernc.org/sqlite accepts these via _pragma query params in the DSN.
+	// The path may already be absolute (e.g. /data/app.db); "file:" + absolute path
+	// is valid and must not be URL-encoded.
+	dsn := "file:" + path + "?_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)&_pragma=foreign_keys(ON)"
+
+	db, err := sql.Open("sqlite", dsn)
 	if err != nil {
 		return nil, fmt.Errorf("opening database: %w", err)
 	}

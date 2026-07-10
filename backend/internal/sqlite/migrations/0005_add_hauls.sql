@@ -14,6 +14,15 @@ CREATE TABLE IF NOT EXISTS hauls (
 -- Recreate store_contents scoped to a haul. Provenance is now exact (we know
 -- which haul each item belongs to) instead of being reconstructed by matching
 -- digests/names, so the uniqueness constraint includes haul_id.
+--
+-- DATA-SAFETY NOTE: The DROP below recreates store_contents with the new
+-- haul_id column. On a FRESH install the table is empty, so nothing is lost.
+-- However, upgrading an install that ALREADY had store_contents rows will
+-- permanently DROP that data. This is a one-time destructive window that is
+-- acceptable only because it happened during the alpha period. Do NOT edit this
+-- statement (see docs/persistence.md "Migration Policy"): the migration is
+-- already recorded as applied by version number and will not re-run, so
+-- changing it here would silently diverge fresh installs from upgraded ones.
 DROP TABLE IF EXISTS store_contents;
 CREATE TABLE store_contents (
     id INTEGER PRIMARY KEY AUTOINCREMENT,

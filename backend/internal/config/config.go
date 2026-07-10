@@ -27,6 +27,14 @@ type Config struct {
 
 	// UIPassword is the optional password for UI access (default: empty, no auth)
 	UIPassword string
+
+	// PublishAuthUser is the optional HTTP Basic auth username for published
+	// registry/file endpoints (default: empty, no auth). Secret; not in ToMap.
+	PublishAuthUser string
+
+	// PublishAuthPassword is the optional HTTP Basic auth password for published
+	// registry/file endpoints (default: empty, no auth). Secret; not in ToMap.
+	PublishAuthPassword string
 }
 
 // Load returns the application configuration from environment variables
@@ -44,6 +52,9 @@ func Load() *Config {
 		DatabasePath:   getEnv("DATABASE_PATH", filepath.Join(haulerDir, "app.db")),
 		DataDir:        haulerDir,
 		UIPassword:     getEnv("HAULER_UI_PASSWORD", ""),
+
+		PublishAuthUser:     getEnv("HAULER_UI_PUBLISH_USER", ""),
+		PublishAuthPassword: getEnv("HAULER_UI_PUBLISH_PASSWORD", ""),
 	}
 }
 

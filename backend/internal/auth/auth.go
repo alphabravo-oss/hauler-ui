@@ -2,7 +2,7 @@ package auth
 
 import (
 	"crypto/rand"
-	"crypto/sha256"
+	"crypto/subtle"
 	"database/sql"
 	"encoding/base64"
 	"fmt"
@@ -46,9 +46,8 @@ func (m *Manager) VerifyPassword(password string) bool {
 	if !m.enabled {
 		return true // No auth configured, allow access
 	}
-	// Hash the provided password and compare with stored hash
-	hashed := hashPassword(password)
-	return hashed == hashPassword(m.password)
+	// Constant-time compare to avoid leaking timing information
+	return subtle.ConstantTimeCompare([]byte(password), []byte(m.password)) == 1
 }
 
 // CreateSession creates a new session token and returns it
@@ -101,12 +100,6 @@ func (m *Manager) cleanupExpiredSessions() {
 	if err != nil {
 		log.Printf("Error cleaning up expired sessions: %v", err)
 	}
-}
-
-// hashPassword creates a SHA-256 hash of the password
-func hashPassword(password string) string {
-	hash := sha256.Sum256([]byte(password))
-	return base64.StdEncoding.EncodeToString(hash[:])
 }
 
 // generateToken generates a secure random token
@@ -176,26 +169,34 @@ func isPublicPath(path string) bool {
 	return false
 }
 
+// isSecureRequest reports whether the request arrived over TLS, either directly
+// or via a proxy that set X-Forwarded-Proto.
+func isSecureRequest(r *http.Request) bool {
+	return r.TLS != nil || strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https")
+}
+
 // SetSessionCookie sets the session cookie on the response
-func SetSessionCookie(w http.ResponseWriter, token string, expiresAt time.Time) {
+func SetSessionCookie(w http.ResponseWriter, r *http.Request, token string, expiresAt time.Time) {
 	http.SetCookie(w, &http.Cookie{
 		Name:     sessionCookieName,
 		Value:    token,
 		Expires:  expiresAt,
 		Path:     "/",
 		HttpOnly: true,
+		Secure:   isSecureRequest(r),
 		SameSite: http.SameSiteStrictMode,
 	})
 }
 
 // ClearSessionCookie clears the session cookie from the response
-func ClearSessionCookie(w http.ResponseWriter) {
+func ClearSessionCookie(w http.ResponseWriter, r *http.Request) {
 	http.SetCookie(w, &http.Cookie{
 		Name:     sessionCookieName,
 		Value:    "",
 		Expires:  time.Unix(0, 0),
 		Path:     "/",
 		HttpOnly: true,
+		Secure:   isSecureRequest(r),
 		SameSite: http.SameSiteStrictMode,
 	})
 }

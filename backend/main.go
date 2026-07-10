@@ -118,7 +118,7 @@ func main() {
 	cleanupOnBoot(db.DB)
 
 	// Initialize job runner
-	jobRunner := jobrunner.New(db.DB)
+	jobRunner := jobrunner.New(db.DB, cfg.DataDir)
 	jobHandler := jobrunner.NewHandler(jobRunner, cfg)
 
 	// Start background job processor

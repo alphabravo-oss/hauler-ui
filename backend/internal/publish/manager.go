@@ -342,7 +342,12 @@ func (m *Manager) RegistryProxyHandler() http.Handler {
 // clusters can pull over TLS; only falls back to plain HTTP if no certificate
 // could be prepared at all. Runs until the process exits.
 func (m *Manager) StartRegistryListener(addr string) {
-	srv := &http.Server{Addr: addr, Handler: m.RegistryProxyHandler()}
+	if m.cfg.PublishAuthUser == "" && m.cfg.PublishAuthPassword == "" {
+		log.Printf("WARNING: published registry/file endpoints are UNAUTHENTICATED (open); set HAULER_UI_PUBLISH_USER and HAULER_UI_PUBLISH_PASSWORD to require HTTP Basic auth")
+	} else {
+		log.Printf("published registry/file endpoints: HTTP Basic auth enforced")
+	}
+	srv := &http.Server{Addr: addr, Handler: m.requireAuth(m.RegistryProxyHandler())}
 	if m.hasTLS() {
 		srv.TLSConfig = &tls.Config{GetCertificate: m.getCertificate}
 		log.Printf("registry proxy listening on %s (host-routed, TLS: %s)", addr, m.TLSStatus().Source)

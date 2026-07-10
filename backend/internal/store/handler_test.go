@@ -87,7 +87,7 @@ func setupTestHandler(t *testing.T) (*Handler, *sql.DB) {
 		DataDir:       dataDir,
 	}
 
-	runner := jobrunner.New(db)
+	runner := jobrunner.New(db, dataDir)
 	haulSvc := hauls.NewService(db, cfg)
 	if _, err := haulSvc.EnsureDefault(context.Background()); err != nil {
 		t.Fatalf("ensuring default haul: %v", err)

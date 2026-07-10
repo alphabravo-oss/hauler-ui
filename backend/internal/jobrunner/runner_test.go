@@ -64,7 +64,7 @@ func setupTestDB(t *testing.T) *sql.DB {
 
 func TestCreateJob(t *testing.T) {
 	db := setupTestDB(t)
-	runner := New(db)
+	runner := New(db, t.TempDir())
 
 	ctx := context.Background()
 	job, err := runner.CreateJob(ctx, "echo", []string{"hello", "world"}, nil)
@@ -88,7 +88,7 @@ func TestCreateJob(t *testing.T) {
 
 func TestGetJob(t *testing.T) {
 	db := setupTestDB(t)
-	runner := New(db)
+	runner := New(db, t.TempDir())
 
 	ctx := context.Background()
 	created, err := runner.CreateJob(ctx, "test", []string{"arg1"}, nil)
@@ -111,7 +111,7 @@ func TestGetJob(t *testing.T) {
 
 func TestJobExecutionAndLogCapture(t *testing.T) {
 	db := setupTestDB(t)
-	runner := New(db)
+	runner := New(db, t.TempDir())
 
 	ctx := context.Background()
 
@@ -191,7 +191,7 @@ done:
 
 func TestJobExecutionWithStderr(t *testing.T) {
 	db := setupTestDB(t)
-	runner := New(db)
+	runner := New(db, t.TempDir())
 
 	ctx := context.Background()
 
@@ -254,7 +254,7 @@ done:
 
 func TestJobExecutionFailure(t *testing.T) {
 	db := setupTestDB(t)
-	runner := New(db)
+	runner := New(db, t.TempDir())
 
 	ctx := context.Background()
 
@@ -305,7 +305,7 @@ done:
 
 func TestListJobs(t *testing.T) {
 	db := setupTestDB(t)
-	runner := New(db)
+	runner := New(db, t.TempDir())
 
 	ctx := context.Background()
 
@@ -359,7 +359,7 @@ func TestListJobs(t *testing.T) {
 
 func TestGetLogsWithSince(t *testing.T) {
 	db := setupTestDB(t)
-	runner := New(db)
+	runner := New(db, t.TempDir())
 
 	ctx := context.Background()
 

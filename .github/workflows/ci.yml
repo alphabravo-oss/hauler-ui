@@ -1,0 +1,63 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  backend:
+    name: Backend (Go)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: backend/go.mod
+
+      - name: Build, vet, and test
+        run: |
+          cd backend
+          go build ./...
+          go vet ./...
+          go test ./...
+
+      - name: golangci-lint (optional)
+        continue-on-error: true
+        run: |
+          cd backend
+          golangci-lint run --disable=errcheck || true
+
+  frontend:
+    name: Frontend (Node)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install dependencies
+        run: |
+          cd web
+          npm ci
+
+      - name: Build
+        run: |
+          cd web
+          npm run build
+
+      - name: Lint
+        run: |
+          cd web
+          npm run lint --if-present
+
+      - name: Test
+        run: |
+          cd web
+          npm run test --if-present

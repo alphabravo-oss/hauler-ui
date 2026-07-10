@@ -140,6 +140,36 @@ You can be logged into multiple registries simultaneously. Each login adds an en
 
 The container creates directories with `755` permissions. Ensure the host mount directory is writable by the container user (typically root or the user specified in the image).
 
+## Migration Policy
+
+Schema changes are applied by numbered SQL migrations in
+`backend/internal/sqlite/migrations/`. Each migration is recorded as applied by
+its version number and will not re-run. This has strict consequences:
+
+1. **Migrations are immutable once released.** Never edit the body of a
+   migration that has already shipped. Because an applied migration will not
+   re-run, editing it changes only fresh installs and silently diverges them
+   from already-upgraded installs. Fix or evolve the schema with a *new*
+   migration instead.
+
+2. **All NEW migrations must be additive and non-destructive.** Prefer
+   `ALTER TABLE` / `ADD COLUMN`. When a table must be reshaped, do it safely:
+   create the new table, backfill existing rows into it, then swap. Never
+   `DROP` a table (or column) that holds user data.
+
+3. **Migrations 0005 and 0006 contain legacy destructive DROPs.** They
+   `DROP TABLE IF EXISTS store_contents;` and
+   `DROP TABLE IF EXISTS saved_manifests;` respectively, recreating each table
+   with a new `haul_id` column. These date from the alpha period and would
+   destroy pre-existing data on an upgrade (a fresh install is unaffected
+   because the tables are empty). **They are the last permitted destructive
+   migrations.** Every migration from 0007 onward must follow rule 2.
+
+4. **Follow-up: CI migration test on a populated DB.** A test that applies the
+   full migration chain against a database seeded with representative user data
+   — and asserts that no rows are lost — is planned. See
+   `docs/enterprise-readiness.md` section 2.5.
+
 ## Storage Requirements
 
 - **Store size**: Proportional to content added (images, charts, files)

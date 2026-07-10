@@ -50,13 +50,18 @@ type LogEntry struct {
 
 // Runner handles job execution and log persistence
 type Runner struct {
-	db *sql.DB
-	mu sync.Mutex
+	db      *sql.DB
+	workDir string
+	mu      sync.Mutex
 }
 
-// New creates a new job runner
-func New(db *sql.DB) *Runner {
-	return &Runner{db: db}
+// New creates a new job runner. workDir is the working directory jobs run in;
+// if empty it defaults to "/data" for safety.
+func New(db *sql.DB, workDir string) *Runner {
+	if workDir == "" {
+		workDir = "/data"
+	}
+	return &Runner{db: db, workDir: workDir}
 }
 
 // DB returns the underlying database connection
@@ -126,7 +131,7 @@ func (r *Runner) Start(ctx context.Context, jobID int64) error {
 	// Create command
 	cmd := exec.CommandContext(ctx, job.Command, job.Args...)
 	cmd.Env = env
-	cmd.Dir = "/data"
+	cmd.Dir = r.workDir
 
 	// Get pipes for stdout and stderr
 	stdout, err := cmd.StdoutPipe()
