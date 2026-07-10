@@ -151,6 +151,7 @@ func isPublicPath(path string) bool {
 	publicPaths := []string{
 		"/api/auth/login",
 		"/healthz",
+		"/readyz",
 		"/api/config",
 		"/h/", // published haul files are served to air-gap consumers without a UI session
 	}

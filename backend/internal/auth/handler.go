@@ -133,8 +133,20 @@ func (h *Handler) Validate(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// RegisterRoutes registers the auth routes with the given mux
+// RegisterRoutes registers the auth routes with the given mux.
+//
+// The login route is wrapped in a per-IP rate limiter to blunt brute-force
+// password guessing. Logout and session validation are intentionally NOT
+// rate-limited (they require an existing session and are not attack surface),
+// and neither are registry/content endpoints (throttling those would break
+// legitimate pulls). A single limiter instance is shared across all requests.
 func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
+	limiter := newLoginLimiter()
+
+	// Rate-limit only the actual login POST. CORS preflight (OPTIONS) is handled
+	// before the limiter so it neither consumes a token nor loses its CORS
+	// headers to a 429.
+	limitedLogin := limiter.Middleware(http.HandlerFunc(h.Login))
 	mux.HandleFunc("/api/auth/login", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodOptions {
 			w.Header().Set("Access-Control-Allow-Origin", "*")
@@ -143,7 +155,7 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 			w.WriteHeader(http.StatusOK)
 			return
 		}
-		h.Login(w, r)
+		limitedLogin.ServeHTTP(w, r)
 	})
 
 	mux.HandleFunc("/api/auth/logout", h.Logout)

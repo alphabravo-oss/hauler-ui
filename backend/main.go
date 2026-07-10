@@ -7,6 +7,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"os/exec"
 	"os/signal"
 	"strconv"
 	"syscall"
@@ -165,6 +166,7 @@ func main() {
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("/healthz", healthzHandler)
+	mux.HandleFunc("/readyz", readyzHandler(db.DB, haulerBinary))
 	mux.HandleFunc("/api/config", configHandler(cfg))
 
 	// Auth endpoints (public)
@@ -299,6 +301,35 @@ func healthzHandler(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(map[string]string{
 		"status": "ok",
 	})
+}
+
+// readyzHandler is a readiness probe (distinct from the /healthz liveness probe).
+// It returns 200 only when the app can actually serve requests: the database is
+// reachable and the hauler binary resolves on PATH. On failure it returns 503 so
+// orchestrators stop routing traffic until the dependencies recover.
+func readyzHandler(db *sql.DB, haulerBinary string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		dbOK := db != nil && db.Ping() == nil
+
+		_, lookErr := exec.LookPath(haulerBinary)
+		haulerOK := lookErr == nil
+
+		w.Header().Set("Content-Type", "application/json")
+		if dbOK && haulerOK {
+			w.WriteHeader(http.StatusOK)
+			_ = json.NewEncoder(w).Encode(map[string]string{
+				"status": "ready",
+			})
+			return
+		}
+
+		w.WriteHeader(http.StatusServiceUnavailable)
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"status": "not ready",
+			"db":     dbOK,
+			"hauler": haulerOK,
+		})
+	}
 }
 
 func configHandler(cfg *config.Config) http.HandlerFunc {
