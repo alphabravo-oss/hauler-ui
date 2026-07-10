@@ -152,20 +152,25 @@ func (r *Runner) Start(ctx context.Context, jobID int64) error {
 		return fmt.Errorf("starting command: %w", err)
 	}
 
-	// Use a WaitGroup to ensure goroutines complete before returning
-	done := make(chan struct{})
-
-	// Wait for command to finish in goroutine
+	// Both pipes must be fully drained BEFORE cmd.Wait() runs: os/exec closes the
+	// pipes once the process is reaped, so calling Wait() first races the readers
+	// and truncates log capture ("read: file already closed"), losing output for
+	// fast commands. Read stdout+stderr to EOF, then reap.
+	var streams sync.WaitGroup
+	streams.Add(2)
 	go func() {
-		r.monitorCompletion(ctx, jobID, cmd)
-		close(done)
+		defer streams.Done()
+		r.streamOutput(ctx, jobID, stdout, "stdout")
+	}()
+	go func() {
+		defer streams.Done()
+		r.streamOutput(ctx, jobID, stderr, "stderr")
 	}()
 
-	// Stream stdout
-	go r.streamOutput(ctx, jobID, stdout, "stdout")
-
-	// Stream stderr
-	go r.streamOutput(ctx, jobID, stderr, "stderr")
+	go func() {
+		streams.Wait()
+		r.monitorCompletion(ctx, jobID, cmd)
+	}()
 
 	return nil
 }
@@ -220,7 +225,7 @@ func (r *Runner) streamOutput(ctx context.Context, jobID int64, reader io.Reader
 func redactSensitive(line string) string {
 	// Redact environment variable assignments with common secret names
 	secretPatterns := []struct {
-		pattern *regexp.Regexp
+		pattern     *regexp.Regexp
 		replacement string
 	}{
 		// Password environment variables
