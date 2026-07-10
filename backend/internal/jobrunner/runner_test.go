@@ -27,6 +27,12 @@ func setupTestDB(t *testing.T) *sql.DB {
 	if err != nil {
 		t.Fatalf("opening database: %v", err)
 	}
+	// Mirror production Open: SQLite is single-writer. Without this cap, the
+	// concurrent log-streaming/status goroutines started by Start race the
+	// polling reads and yield transient "database is locked" errors, which made
+	// TestGetLogsWithSince flaky (nil GetJob result -> panic) on CI runners.
+	db.SetMaxOpenConns(1)
+	db.SetMaxIdleConns(1)
 	t.Cleanup(func() { db.Close() })
 
 	// Create schema
@@ -379,7 +385,11 @@ func TestGetLogsWithSince(t *testing.T) {
 
 	// Wait for completion
 	for i := 0; i < 50; i++ {
-		finalJob, _ := runner.GetJob(ctx, job.ID)
+		finalJob, err := runner.GetJob(ctx, job.ID)
+		if err != nil || finalJob == nil {
+			time.Sleep(100 * time.Millisecond)
+			continue
+		}
 		if finalJob.Status == StatusSucceeded || finalJob.Status == StatusFailed {
 			break
 		}
