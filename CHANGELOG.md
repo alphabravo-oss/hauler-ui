@@ -2,7 +2,12 @@
 
 All notable changes to Hauler UI will be documented in this file.
 
-## [Unreleased]
+## [0.1.0] - 2026-07-11
+
+First tagged release. Finalizes the multi-haul + publish work and adds a round
+of security, reliability, observability, and test hardening. Published as a
+public multi-arch image (linux/amd64 + linux/arm64) at
+`ghcr.io/alphabravo-oss/hauler-ui:0.1.0`.
 
 ### Added — Multi-haul serving (Publish layer)
 
@@ -57,6 +62,63 @@ and archived side by side without clearing or merging a shared store.
 - **Clearer paths** — the Store page and Settings now show the active haul's
   isolated store directory and the per-haul hauls root instead of a single
   global store path.
+
+### Added — Observability
+
+- **Prometheus metrics** at `/metrics` (request counts/durations, queued/running
+  job gauges, published-haul gauge) — dependency-free text exposition.
+- **Readiness probe** `/readyz` (503 unless the database is reachable and the
+  `hauler` binary resolves), alongside the existing `/healthz` liveness probe.
+- **Structured JSON logging** via `log/slog` (also routes existing stdlib logs);
+  a per-request access log. Config: `HAULER_UI_LOG_FORMAT` (json/text),
+  `HAULER_UI_LOG_LEVEL`.
+
+### Added — Testing, CI & release
+
+- Unit tests across the backend (`hauls`, `manifests`, `publish`, `config`,
+  `registry`, `serve`, `settings`, `obs`, `auth`) and a **migration-upgrade
+  regression test** that fails CI if a future migration drops populated stable
+  tables. Minimal frontend test harness (vitest + jsdom).
+- **GitHub Actions CI** (build/vet/test + frontend build/lint) and **Dependabot**
+  (alerts, security fixes, weekly gomod/npm/actions updates).
+- **Public multi-arch image** published to `ghcr.io/alphabravo-oss/hauler-ui`
+  (amd64 + arm64) via buildx, on `main` pushes and `v*` tags.
+
+### Changed — Registry serving is now lazy
+
+- Published registries **start on the first pull and idle-reap** after
+  `HAULER_UI_REGISTRY_IDLE` (default 5m), so the number of live
+  `hauler serve registry` subprocesses tracks the active pull set rather than the
+  total number of published hauls.
+
+### Changed — Reliability & configuration
+
+- SQLite now uses **WAL journaling + busy_timeout** to reduce lock contention.
+- The UI/API server honors **`PORT`** (was hardcoded to `8080`).
+- Job working directory is injectable (no longer hardcoded `/data`).
+- Frontend on **Vite 8**; large files split into modules (`App.jsx`,
+  `store/handler.go`).
+- Repository moved to **`github.com/alphabravo-oss/hauler-ui`**; image, docs, and
+  deploy references updated accordingly.
+
+### Fixed
+
+- **Job-log capture race**: `cmd.Wait()` ran concurrently with the stdout/stderr
+  readers, truncating captured output for fast commands
+  (`read: file already closed`). Pipes are now drained to EOF before reaping.
+- Flaky `jobrunner` tests (single-writer test DB; nil-safe job polling).
+
+### Security
+
+- **Constant-time password comparison** (replaced a timing-leaky string compare).
+- **`Secure` session cookie**, gated on TLS / `X-Forwarded-Proto`.
+- **Optional HTTP Basic auth** on the published registry and `/h/` file endpoints
+  (`HAULER_UI_PUBLISH_USER` / `HAULER_UI_PUBLISH_PASSWORD`; endpoints stay open
+  when unset, with a startup warning).
+- **Login rate limiting** (`HAULER_UI_LOGIN_RATE`; `HAULER_UI_TRUST_PROXY` for
+  proxy-aware client-IP keying).
+- Cleared all outstanding Dependabot alerts (js-yaml, dompurify, brace-expansion).
+- **Additive-only migration policy** documented and enforced by a CI upgrade test.
 
 ## [0.1.0-alpha] - 2025-01-28
 
