@@ -274,8 +274,9 @@ func main() {
 	// and access logs capture every request (including auth rejections).
 	handler := obs.Instrument(authManager.Middleware(mux))
 
+	port := getEnv("PORT", "8080")
 	server := &http.Server{
-		Addr:        ":8080",
+		Addr:        ":" + port,
 		Handler:     handler,
 		ReadTimeout: 5 * time.Second,
 	}
@@ -290,7 +291,7 @@ func main() {
 	defer stop()
 
 	go func() {
-		log.Println("Server starting on :8080")
+		log.Printf("Server starting on :%s", port)
 		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			log.Fatalf("server error: %v", err)
 		}

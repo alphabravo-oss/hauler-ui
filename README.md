@@ -1,10 +1,13 @@
 # Hauler UI by AlphaBravo
 
+[![CI](https://github.com/alphabravo-oss/hauler-ui/actions/workflows/ci.yml/badge.svg)](https://github.com/alphabravo-oss/hauler-ui/actions/workflows/ci.yml)
+[![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://www.apache.org/licenses/LICENSE-2.0)
+
 <p align="center">
   <img src="assets/ui-screenshot-1.png" alt="Hauler UI Screenshot" width="600">
 </p>
 
-A beginner-friendly web interface for [Rancher Government Hauler](https://github.com/rancherfederal/hauler) — the airgap content orchestration tool.
+A graphical, single-container control plane for [Rancher Government Hauler](https://github.com/rancherfederal/hauler) — manage isolated airgap content stores and serve them to disconnected clusters, no CLI required.
 
 **NOTE**: This project is in ALPHA while we test it. We will release a stable version in the coming weeks.
 
@@ -14,12 +17,15 @@ Hauler UI is a **single-container web application** that provides full operation
 
 ### Key Features
 
+- **Multi-Haul Workspaces** — First-class isolated hauls, each with its own content store; operate on them independently
 - **Store Operations** — Add images, charts, and files to your store; sync registries; save/load archives; extract content
 - **Registry Management** — Login/logout to Docker Hub, GHCR, and other container registries
+- **Publishing** — Expose every published haul through a single host-routed registry front door (plus direct file serving at `/h/`), with TLS; registries start on demand and idle-reap
 - **Serve Operations** — Start an embedded container registry or HTTP fileserver
 - **Job Management** — Background task execution with streaming logs and job history
 - **Manifest Management** — Create and edit Hauler manifests with Monaco editor
 - **Authentication** — Optional password-based UI access control
+- **Observability** — Prometheus metrics at `/metrics`, liveness `/healthz` + readiness `/readyz` probes, and structured JSON logging
 - **Single Container** — Everything packaged in one Alpine-based image for simple deployment
 
 ## Quick Start
@@ -32,7 +38,7 @@ docker run -d \
   --name hauler-ui \
   -p 8080:8080 \
   -v hauler-data:/data \
-  ghcr.io/rancherfederal/hauler-ui:latest
+  ghcr.io/alphabravo-oss/hauler-ui:latest
 
 # Or use Docker Compose
 docker-compose -f deploy/docker-compose.yml up -d
@@ -117,24 +123,50 @@ make lint
 
 ## Configuration
 
-Hauler UI is configured via environment variables:
+Hauler UI is configured via environment variables.
+
+### Server & Auth
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `PORT` | `8080` | HTTP server port |
-| `HAULER_UI_PASSWORD` | (none) | Optional UI password for authentication |
-| `HAULER_LOG_LEVEL` | `info` | Hauler CLI log level (debug, info, warn, error) |
+| `PORT` | `8080` | HTTP UI/API server port (now honored in code) |
+| `HAULER_UI_PASSWORD` | (empty) | Optional shared password for UI login; empty disables auth |
+| `HAULER_UI_LOGIN_RATE` | `5` | Max login attempts per minute per client IP (429 beyond) |
+| `HAULER_UI_TRUST_PROXY` | `false` | When true, trust the rightmost `X-Forwarded-For` hop for login rate-limit IP keying (only behind a trusted reverse proxy) |
+
+### Published Registry / Files (the multi-haul front door)
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `HAULER_UI_REGISTRY_PORT` | `5000` | Single host-routed port serving all published haul registries |
+| `HAULER_UI_REGISTRY_DOMAIN` | (empty) | Base domain for `<slug>.<domain>` registry routing |
+| `HAULER_UI_REGISTRY_IDLE` | `5m` | Idle timeout before a published registry subprocess is reaped (Go duration) |
+| `HAULER_UI_REGISTRY_TLS_CERT` | (empty) | Path to a TLS cert for the registry port (self-signed if unset) |
+| `HAULER_UI_REGISTRY_TLS_KEY` | (empty) | Path to the TLS key |
+| `HAULER_UI_PUBLISH_USER` | (empty) | HTTP Basic auth username guarding the published registry **and** `/h/` file endpoints. If **both** user & password are empty the endpoints are OPEN (a startup WARNING is logged) |
+| `HAULER_UI_PUBLISH_PASSWORD` | (empty) | Basic auth password for the above |
+
+### Jobs & Logging (observability)
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `HAULER_UI_MAX_CONCURRENT_JOBS` | `2` | Max background jobs run at once |
+| `HAULER_UI_LOG_FORMAT` | `json` | UI server log format: `json` or `text` |
+| `HAULER_UI_LOG_LEVEL` | `info` | UI server log level: `debug` \| `info` \| `warn` \| `error` |
+
+### Hauler CLI Passthrough & Paths
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `HAULER_BINARY` | `hauler` | Hauler binary name/path |
+| `HAULER_LOG_LEVEL` | `info` | Hauler CLI log level |
 | `HAULER_IGNORE_ERRORS` | `false` | Continue operations despite errors |
-| `HAULER_RETRIES` | `3` | Number of retries for failed operations |
+| `HAULER_RETRIES` | `0` | Retries for hauler ops (also settable in the Settings UI) |
 | `HAULER_DIR` | `/data` | Hauler working directory |
 | `HAULER_STORE_DIR` | `/data/store` | Store directory path |
 | `HAULER_TEMP_DIR` | `/data/tmp` | Temporary files directory |
 | `DOCKER_CONFIG` | `/data/.docker` | Docker auth config directory |
 | `DATABASE_PATH` | `/data/app.db` | SQLite database path |
-| `HAULER_UI_REGISTRY_PORT` | `5000` | Single host-routed port for published haul registries |
-| `HAULER_UI_REGISTRY_DOMAIN` | (none) | Base domain for `<slug>.<domain>` registry routing |
-| `HAULER_UI_REGISTRY_TLS_CERT` | (none) | Path to a TLS cert (e.g. wildcard) for the registry endpoint |
-| `HAULER_UI_REGISTRY_TLS_KEY` | (none) | Path to the TLS private key for the registry endpoint |
 
 > **Source of truth**: See `deploy/.env.example` for the complete list of documented environment variables.
 
@@ -155,7 +187,7 @@ Mount this directory as a volume to persist data across container restarts.
 ```yaml
 services:
   hauler-ui:
-    image: ghcr.io/rancherfederal/hauler-ui:latest
+    image: ghcr.io/alphabravo-oss/hauler-ui:latest
     ports:
       - "8080:8080"   # Main UI
       - "5000:5000"   # Registry serve
@@ -197,14 +229,15 @@ docker push your-registry/hauler-ui:latest
 ### Backend (Go)
 
 - **Standard library HTTP server** — No external web framework
-- **SQLite** — Embedded database for persistence
+- **SQLite (WAL mode)** — Embedded database for persistence
 - **SSE (Server-Sent Events)** — Real-time log streaming
 - **Async job runner** — Background process execution
+- **Lazy publish registries** — Published haul registries start on demand and are idle-reaped
 
 ### Frontend (React)
 
 - **React 19.1** — Modern React with hooks
-- **Vite 6** — Fast build tool and dev server
+- **Vite 8** — Fast build tool and dev server
 - **React Router 7** — Client-side routing
 - **Monaco Editor** — VS Code editor for manifests
 - **Custom CSS** — Lightweight styling without frameworks
@@ -236,14 +269,14 @@ Copyright © 2025 Rancher Government, Inc.
 
 ## Support on Hauler (not the UI)
 
-- **Issues**: [GitHub Issues](https://github.com/rancherfederal/hauler-ui/issues)
+- **Issues**: [GitHub Issues](https://github.com/rancherfederal/hauler/issues)
 - **Documentation**: [Hauler Docs](https://rancherfederal.github.io/hauler/)
 - **Community**: [Rancher Government Slack](https://ranchergovernment.slack.com/)
 
 ## Support on Hauler UI
 
-- **Issues**: [GitHub Issues](https://github.com/AlphaBravoCompany/hauler-ui/issues)
-- **Documentation** [Documentation](https://github.com/AlphaBravoCompany/hauler-ui/tree/main/docs)
+- **Issues**: [GitHub Issues](https://github.com/alphabravo-oss/hauler-ui/issues)
+- **Documentation**: [Documentation](https://github.com/alphabravo-oss/hauler-ui/tree/main/docs)
 
 ## Built by AlphaBravo
 

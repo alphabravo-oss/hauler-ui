@@ -1,10 +1,11 @@
 services:
   hauler-ui:
+    # image: ghcr.io/alphabravo-oss/hauler-ui:latest   # Uncomment to use the published image instead of building locally
     build: ..
     ports:
       - "${PORT:-8080}:8080"   # Main UI
-      - "5000:5000"            # Registry serve
-      - "5001:5001"            # Fileserver serve
+      - "5000:5000"            # Registry serve (published registry)
+      - "5001:5001"            # Optional: manual fileserver serve (user-chosen port)
     volumes:
       - ./data:/data
     environment:
@@ -12,4 +13,17 @@ services:
       - HAULER_UI_PASSWORD=${HAULER_UI_PASSWORD:-}
       - HAULER_LOG_LEVEL=${HAULER_LOG_LEVEL:-info}
       - HAULER_IGNORE_ERRORS=${HAULER_IGNORE_ERRORS:-false}
-      - HAULER_RETRIES=${HAULER_RETRIES:-3}
+      - HAULER_RETRIES=${HAULER_RETRIES:-0}
+      # set BOTH to require Basic auth on the published registry + /h/ files (open if unset)
+      - HAULER_UI_PUBLISH_USER=${HAULER_UI_PUBLISH_USER:-}
+      - HAULER_UI_PUBLISH_PASSWORD=${HAULER_UI_PUBLISH_PASSWORD:-}
+      - HAULER_UI_REGISTRY_PORT=${HAULER_UI_REGISTRY_PORT:-5000}
+      - HAULER_UI_LOG_FORMAT=${HAULER_UI_LOG_FORMAT:-json}
+      - HAULER_UI_LOG_LEVEL=${HAULER_UI_LOG_LEVEL:-info}
+    # The alpine base image provides wget via busybox, so this needs no extra packages.
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/readyz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s

@@ -49,7 +49,9 @@ COPY --from=backend-builder /app/server /app/server
 # Copy built frontend assets
 COPY --from=web-builder /web/dist /app/web
 
+# 8080 = web UI / API; 5000 = published-registry front door (host-routed)
 EXPOSE 8080
+EXPOSE 5000
 
 ENV PORT=8080
 
