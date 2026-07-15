@@ -1,6 +1,6 @@
 # Known Limitations
 
-This document describes known limitations of Hauler UI and how the application surfaces these limitations to users.
+This document describes known limitations of Wagon and how the application surfaces these limitations to users.
 
 ## Platform-Specific Limitations
 
@@ -54,7 +54,7 @@ This document describes known limitations of Hauler UI and how the application s
 
 **Workaround**: Use a different port (e.g., 8081) and add the port mapping:
 ```bash
-docker run -p 8080:8080 -p 8081:8081 -v ./data:/data hauler-ui:latest
+docker run -p 8080:8080 -p 8081:8081 -v ./data:/data wagon:latest
 ```
 
 ## Storage Limitations

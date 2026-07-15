@@ -186,7 +186,7 @@ func (m *Manager) generateSelfSigned() error {
 
 	tmpl := x509.Certificate{
 		SerialNumber:          serial,
-		Subject:               pkix.Name{CommonName: "hauler-ui registry (self-signed)"},
+		Subject:               pkix.Name{CommonName: "wagon registry (self-signed)"},
 		NotBefore:             time.Now().Add(-time.Hour),
 		NotAfter:              time.Now().AddDate(1, 0, 0),
 		KeyUsage:              x509.KeyUsageDigitalSignature | x509.KeyUsageKeyEncipherment,

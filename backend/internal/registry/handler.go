@@ -7,8 +7,8 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/hauler-ui/hauler-ui/backend/internal/config"
-	"github.com/hauler-ui/hauler-ui/backend/internal/jobrunner"
+	"github.com/alphabravo-oss/wagon/backend/internal/config"
+	"github.com/alphabravo-oss/wagon/backend/internal/jobrunner"
 )
 
 // Handler handles HTTP requests for registry operations
@@ -93,10 +93,10 @@ func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusAccepted)
 	_ = json.NewEncoder(w).Encode(map[string]interface{}{
-		"jobId":       job.ID,
-		"message":     "Login job started",
-		"registry":    req.Registry,
-		"username":    req.Username,
+		"jobId":    job.ID,
+		"message":  "Login job started",
+		"registry": req.Registry,
+		"username": req.Username,
 	})
 }
 

@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/hauler-ui/hauler-ui/backend/internal/sqlite"
+	"github.com/alphabravo-oss/wagon/backend/internal/sqlite"
 )
 
 // newTestHandler opens a fresh migrated database in a temp dir and returns a

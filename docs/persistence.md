@@ -2,7 +2,7 @@
 
 ## Overview
 
-Hauler UI uses `/data` as the persistent root directory for all stored data. This directory must be mounted as a volume to ensure data persists across container restarts.
+Wagon uses `/data` as the persistent root directory for all stored data. This directory must be mounted as a volume to ensure data persists across container restarts.
 
 ## Why /data Must Be Mounted
 
@@ -19,14 +19,14 @@ Without a volume mount, **all data is lost** when the container is removed or re
 The container expects a volume mount at `/data`:
 
 ```bash
-docker run -v ./data:/data -p 8080:8080 hauler-ui:latest
+docker run -v ./data:/data -p 8080:8080 wagon:latest
 ```
 
 Or in docker-compose.yml:
 
 ```yaml
 services:
-  hauler-ui:
+  wagon:
     build: ..
     ports:
       - "${PORT:-8080}:8080"   # Main UI
@@ -99,7 +99,7 @@ cat ./data/.docker/config.json
 Inside the container:
 
 ```bash
-docker exec hauler-ui cat /data/.docker/config.json
+docker exec wagon cat /data/.docker/config.json
 ```
 
 ### Clearing Credentials
@@ -109,7 +109,7 @@ docker exec hauler-ui cat /data/.docker/config.json
 rm ./data/.docker/config.json
 
 # Or logout via UI or CLI
-docker exec hauler-ui hauler logout registry.example.com
+docker exec wagon hauler logout registry.example.com
 ```
 
 ### Credential Security

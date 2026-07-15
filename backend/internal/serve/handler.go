@@ -19,8 +19,8 @@ import (
 
 	_ "modernc.org/sqlite"
 
-	"github.com/hauler-ui/hauler-ui/backend/internal/config"
-	"github.com/hauler-ui/hauler-ui/backend/internal/hauls"
+	"github.com/alphabravo-oss/wagon/backend/internal/config"
+	"github.com/alphabravo-oss/wagon/backend/internal/hauls"
 )
 
 // Handler handles HTTP requests for serve operations

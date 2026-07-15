@@ -55,8 +55,8 @@ clean:
 
 # Docker build
 docker-build:
-	docker build -t hauler-ui:latest .
+	docker build -t wagon:latest .
 
 # Docker run
 docker-run: docker-build
-	docker run -p 8080:8080 hauler-ui:latest
+	docker run -p 8080:8080 wagon:latest

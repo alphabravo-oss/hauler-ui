@@ -13,19 +13,19 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/hauler-ui/hauler-ui/backend/internal/auth"
-	"github.com/hauler-ui/hauler-ui/backend/internal/config"
-	"github.com/hauler-ui/hauler-ui/backend/internal/hauler"
-	"github.com/hauler-ui/hauler-ui/backend/internal/hauls"
-	"github.com/hauler-ui/hauler-ui/backend/internal/jobrunner"
-	"github.com/hauler-ui/hauler-ui/backend/internal/manifests"
-	"github.com/hauler-ui/hauler-ui/backend/internal/obs"
-	"github.com/hauler-ui/hauler-ui/backend/internal/publish"
-	"github.com/hauler-ui/hauler-ui/backend/internal/registry"
-	"github.com/hauler-ui/hauler-ui/backend/internal/serve"
-	"github.com/hauler-ui/hauler-ui/backend/internal/settings"
-	"github.com/hauler-ui/hauler-ui/backend/internal/sqlite"
-	"github.com/hauler-ui/hauler-ui/backend/internal/store"
+	"github.com/alphabravo-oss/wagon/backend/internal/auth"
+	"github.com/alphabravo-oss/wagon/backend/internal/config"
+	"github.com/alphabravo-oss/wagon/backend/internal/hauler"
+	"github.com/alphabravo-oss/wagon/backend/internal/hauls"
+	"github.com/alphabravo-oss/wagon/backend/internal/jobrunner"
+	"github.com/alphabravo-oss/wagon/backend/internal/manifests"
+	"github.com/alphabravo-oss/wagon/backend/internal/obs"
+	"github.com/alphabravo-oss/wagon/backend/internal/publish"
+	"github.com/alphabravo-oss/wagon/backend/internal/registry"
+	"github.com/alphabravo-oss/wagon/backend/internal/serve"
+	"github.com/alphabravo-oss/wagon/backend/internal/settings"
+	"github.com/alphabravo-oss/wagon/backend/internal/sqlite"
+	"github.com/alphabravo-oss/wagon/backend/internal/store"
 )
 
 // maxConcurrentJobs caps how many jobs run at once so a burst of queued
@@ -263,8 +263,8 @@ func main() {
 	// Serve static files from web build directory
 	fs := http.FileServer(http.Dir("./web"))
 	mux.Handle("/assets/", fs)
-	mux.HandleFunc("/hauler-logo.svg", func(w http.ResponseWriter, r *http.Request) {
-		http.ServeFile(w, r, "./web/hauler-logo.svg")
+	mux.HandleFunc("/wagon-logo.svg", func(w http.ResponseWriter, r *http.Request) {
+		http.ServeFile(w, r, "./web/wagon-logo.svg")
 	})
 	mux.HandleFunc("/favicon.svg", func(w http.ResponseWriter, r *http.Request) {
 		http.ServeFile(w, r, "./web/favicon.svg")

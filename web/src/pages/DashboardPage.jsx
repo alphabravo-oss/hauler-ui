@@ -60,7 +60,7 @@ function Dashboard() {
       <div className="card">
         <div className="card-title">Getting Started</div>
         <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', lineHeight: '1.6' }}>
-          Welcome to Hauler UI. Use the navigation sidebar to manage your container store,
+          Welcome to Wagon. Use the navigation sidebar to manage your container store,
           create manifests, run hauls, and monitor background jobs.
         </p>
       </div>

@@ -1,4 +1,4 @@
-// Package publish exposes multiple hauls through hauler-ui's single front door:
+// Package publish exposes multiple hauls through Wagon's single front door:
 // a host-routed reverse proxy for per-haul registries and path-routed file
 // serving straight from each haul's store.
 //
@@ -26,8 +26,8 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/hauler-ui/hauler-ui/backend/internal/config"
-	"github.com/hauler-ui/hauler-ui/backend/internal/hauls"
+	"github.com/alphabravo-oss/wagon/backend/internal/config"
+	"github.com/alphabravo-oss/wagon/backend/internal/hauls"
 )
 
 // published is a live, exposed haul: an internal readonly registry process plus

@@ -1,10 +1,16 @@
-# Hauler UI by AlphaBravo
+<p align="center">
+  <img src="web/public/wagon-logo.svg" alt="Wagon logo" width="120">
+</p>
 
-[![CI](https://github.com/alphabravo-oss/hauler-ui/actions/workflows/ci.yml/badge.svg)](https://github.com/alphabravo-oss/hauler-ui/actions/workflows/ci.yml)
+<h1 align="center">Wagon</h1>
+
+<p align="center">A graphical control plane for Hauler, built by AlphaBravo.</p>
+
+[![CI](https://github.com/alphabravo-oss/wagon/actions/workflows/ci.yml/badge.svg)](https://github.com/alphabravo-oss/wagon/actions/workflows/ci.yml)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://www.apache.org/licenses/LICENSE-2.0)
 
 <p align="center">
-  <img src="assets/ui-screenshot-1.png" alt="Hauler UI Screenshot" width="600">
+  <img src="assets/ui-screenshot-1.png" alt="Wagon Screenshot" width="600">
 </p>
 
 A graphical, single-container control plane for [Rancher Government Hauler](https://github.com/rancherfederal/hauler) — manage isolated airgap content stores and serve them to disconnected clusters, no CLI required.
@@ -13,7 +19,7 @@ A graphical, single-container control plane for [Rancher Government Hauler](http
 
 ## Overview
 
-Hauler UI is a **single-container web application** that provides full operational parity with the Hauler CLI. It wraps the power of Hauler's command-line interface in an intuitive graphical experience, making airgap operations accessible to users of all skill levels.
+Wagon is a **single-container web application** that provides full operational parity with the Hauler CLI. It wraps the power of Hauler's command-line interface in an intuitive graphical experience, making airgap operations accessible to users of all skill levels.
 
 ### Key Features
 
@@ -35,10 +41,10 @@ Hauler UI is a **single-container web application** that provides full operation
 ```bash
 # Run with default configuration
 docker run -d \
-  --name hauler-ui \
+  --name wagon \
   -p 8080:8080 \
-  -v hauler-data:/data \
-  ghcr.io/alphabravo-oss/hauler-ui:latest
+  -v wagon-data:/data \
+  ghcr.io/alphabravo-oss/wagon:latest
 
 # Or use Docker Compose
 docker-compose -f deploy/docker-compose.yml up -d
@@ -65,7 +71,7 @@ Access the UI at `http://localhost:8080`
 ### Project Structure
 
 ```
-hauler-ui/
+wagon/
 ├── backend/           # Go backend server
 │   └── internal/      # Internal packages
 │       ├── auth/      # Authentication & sessions
@@ -123,7 +129,10 @@ make lint
 
 ## Configuration
 
-Hauler UI is configured via environment variables.
+Wagon is configured via environment variables.
+
+> `HAULER_UI_*` names remain supported as the stable configuration interface
+> for compatibility with existing deployments; they now configure Wagon.
 
 ### Server & Auth
 
@@ -186,24 +195,24 @@ Mount this directory as a volume to persist data across container restarts.
 
 ```yaml
 services:
-  hauler-ui:
-    image: ghcr.io/alphabravo-oss/hauler-ui:latest
+  wagon:
+    image: ghcr.io/alphabravo-oss/wagon:latest
     ports:
       - "8080:8080"   # Main UI
       - "5000:5000"   # Registry serve
       - "5001:5001"   # Fileserver serve
     volumes:
-      - hauler-data:/data
+      - wagon-data:/data
     environment:
       - HAULER_UI_PASSWORD=your-password  # Optional
 
 volumes:
-  hauler-data:
+  wagon-data:
 ```
 
 ### Kubernetes
 
-You can deploy Hauler UI to Kubernetes using the Docker image. Ensure to:
+You can deploy Wagon to Kubernetes using the Docker image. Ensure to:
 
 1. Create a PersistentVolumeClaim for `/data`
 2. Set environment variables as needed
@@ -218,10 +227,10 @@ Example deployment configuration is available in `deploy/kubernetes/`.
 make docker-build
 
 # Tag for your registry
-docker tag hauler-ui:latest your-registry/hauler-ui:latest
+docker tag wagon:latest your-registry/wagon:latest
 
 # Push to registry
-docker push your-registry/hauler-ui:latest
+docker push your-registry/wagon:latest
 ```
 
 ## Architecture
@@ -273,10 +282,10 @@ Copyright © 2025 Rancher Government, Inc.
 - **Documentation**: [Hauler Docs](https://rancherfederal.github.io/hauler/)
 - **Community**: [Rancher Government Slack](https://ranchergovernment.slack.com/)
 
-## Support on Hauler UI
+## Support on Wagon
 
-- **Issues**: [GitHub Issues](https://github.com/alphabravo-oss/hauler-ui/issues)
-- **Documentation**: [Documentation](https://github.com/alphabravo-oss/hauler-ui/tree/main/docs)
+- **Issues**: [GitHub Issues](https://github.com/alphabravo-oss/wagon/issues)
+- **Documentation**: [Documentation](https://github.com/alphabravo-oss/wagon/tree/main/docs)
 
 ## Built by AlphaBravo
 

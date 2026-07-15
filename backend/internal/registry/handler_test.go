@@ -11,9 +11,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/hauler-ui/hauler-ui/backend/internal/config"
-	"github.com/hauler-ui/hauler-ui/backend/internal/jobrunner"
-	"github.com/hauler-ui/hauler-ui/backend/internal/sqlite"
+	"github.com/alphabravo-oss/wagon/backend/internal/config"
+	"github.com/alphabravo-oss/wagon/backend/internal/jobrunner"
+	"github.com/alphabravo-oss/wagon/backend/internal/sqlite"
 )
 
 // newTestHandler builds a Handler backed by a real jobrunner.Runner with a

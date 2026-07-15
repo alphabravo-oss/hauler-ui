@@ -243,7 +243,7 @@ function ServeTab({ haul }) {
           <div>
             <div className="card-title" style={{ border: 'none', margin: 0 }}>Publish this Haul</div>
             <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', margin: '0.25rem 0 0' }}>
-              Expose this haul&apos;s registry through hauler-ui&apos;s single front door (one port, host-routed),
+              Expose this haul&apos;s registry through Wagon&apos;s single front door (one port, host-routed),
               and serve its files at a stable URL — no per-haul ports to manage.
             </p>
           </div>

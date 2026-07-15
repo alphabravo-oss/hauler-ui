@@ -1,4 +1,4 @@
-// Package obs provides observability for the hauler-ui server: structured
+// Package obs provides observability for the Wagon server: structured
 // logging setup, an HTTP instrumentation middleware, and a dependency-free
 // Prometheus-format metrics endpoint.
 //

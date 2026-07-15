@@ -3,9 +3,9 @@ package store
 import (
 	"net/http"
 
-	"github.com/hauler-ui/hauler-ui/backend/internal/config"
-	"github.com/hauler-ui/hauler-ui/backend/internal/hauls"
-	"github.com/hauler-ui/hauler-ui/backend/internal/jobrunner"
+	"github.com/alphabravo-oss/wagon/backend/internal/config"
+	"github.com/alphabravo-oss/wagon/backend/internal/hauls"
+	"github.com/alphabravo-oss/wagon/backend/internal/jobrunner"
 )
 
 // Handler handles HTTP requests for store operations

@@ -5,7 +5,7 @@ import { createContext, useContext, useState, useEffect, useCallback } from 'rea
 // haul id is persisted to localStorage so it survives reloads.
 const HaulContext = createContext()
 
-const ACTIVE_HAUL_KEY = 'hauler-ui.activeHaulId'
+const ACTIVE_HAUL_KEY = 'wagon.activeHaulId'
 
 export function useHauls() {
   const ctx = useContext(HaulContext)

@@ -3,21 +3,21 @@
 **Status:** Implemented — host-routed registry proxy, direct file serving, and
 TLS are live (`internal/publish`). The single-process registry in "Process
 model" below remains a future option.
-**Audience:** hauler-ui maintainers
+**Audience:** Wagon maintainers
 **Related:** isolated per-haul stores (`/data/hauls/<slug>/store`)
 
 ## Process model & footprint
 
 Today, **each published haul runs one `hauler store serve registry`
-subprocess**, bound to a private `127.0.0.1` ephemeral port; hauler-ui
+subprocess**, bound to a private `127.0.0.1` ephemeral port; Wagon
 reverse-proxies to it by Host header. So **N published hauls = N hauler
 processes**. This reuses hauler's own registry implementation rather than
 reimplementing the OCI distribution API, at the cost of a process (and a small
 warm-up + memory) per published haul. **Files do not spawn anything** — they are
-served directly from the store by hauler-ui.
+served directly from the store by Wagon.
 
 If the process-per-haul footprint becomes a concern, the future option is a
-**single in-process read-only OCI registry** inside hauler-ui that serves every
+**single in-process read-only OCI registry** inside Wagon that serves every
 haul from its store directory and host-routes internally — one process, no
 subprocesses. That is more code (implement `/v2/` manifests + blobs against the
 OCI layout) but eliminates the fan-out. The current host-routed proxy is
@@ -35,7 +35,7 @@ with isolated catalogs). That works, but it does not scale operationally:
   unbounded number of per-haul registries.
 - Air-gap consumers want **one stable endpoint**, not a port lookup table.
 
-Goal: expose many hauls through a single front door, served by hauler-ui itself,
+Goal: expose many hauls through a single front door, served by Wagon itself,
 without sacrificing per-haul isolation.
 
 ## The hard constraint (read this first)
@@ -62,7 +62,7 @@ This split drives the whole design:
 ## Architecture
 
 ```
-                          ┌────────────────────── hauler-ui process ──────────────────────┐
+                          ┌────────────────────── Wagon process ──────────────────────┐
   docker pull             │                                                                │
   bundle.reg.example.com  │   Registry listener (:5000/:443)                               │
   ───────────────────────▶│   host-based reverse proxy ──┐                                 │
@@ -88,7 +88,7 @@ Two listeners:
 ## Registry: host-based reverse proxy
 
 ### Internal registry manager
-When a haul is **published**, hauler-ui starts an internal registry for it:
+When a haul is **published**, Wagon starts an internal registry for it:
 
 ```
 hauler store serve registry \
@@ -146,9 +146,9 @@ server = "https://bundle.registry.example.com"
   capabilities = ["pull", "resolve"]
 ```
 
-## Files: path-routed, served directly by hauler-ui
+## Files: path-routed, served directly by Wagon
 
-No subprocess. hauler-ui serves files straight from the haul's OCI store:
+No subprocess. Wagon serves files straight from the haul's OCI store:
 
 - `GET /h/<slug>/` → listing (JSON, and an HTML index) of `file` and `chart`
   artifacts in the haul.
@@ -238,5 +238,5 @@ New "publish" concept (a published haul = exposed through the front door):
   single registry port; confirm isolated catalogs.
 - Pull a large multi-layer image through the proxy; confirm streaming + `Range`.
 - `curl` a file artifact via `/h/<slug>/<name>`; confirm content + filename.
-- Restart hauler-ui; confirm published hauls auto-republish.
+- Restart wagon; confirm published hauls auto-republish.
 - Unpublish; confirm route + internal process removed.
