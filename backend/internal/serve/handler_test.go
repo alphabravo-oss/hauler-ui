@@ -10,9 +10,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/hauler-ui/hauler-ui/backend/internal/config"
-	"github.com/hauler-ui/hauler-ui/backend/internal/hauls"
-	"github.com/hauler-ui/hauler-ui/backend/internal/sqlite"
+	"github.com/alphabravo-oss/wagon/backend/internal/config"
+	"github.com/alphabravo-oss/wagon/backend/internal/hauls"
+	"github.com/alphabravo-oss/wagon/backend/internal/sqlite"
 )
 
 // testEnv bundles the pieces a handler test needs: a migrated DB, a haul

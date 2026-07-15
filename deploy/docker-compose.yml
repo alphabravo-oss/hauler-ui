@@ -1,6 +1,6 @@
 services:
-  hauler-ui:
-    # image: ghcr.io/alphabravo-oss/hauler-ui:latest   # Uncomment to use the published image instead of building locally
+  wagon:
+    # image: ghcr.io/alphabravo-oss/wagon:latest   # Uncomment to use the published image instead of building locally
     build: ..
     ports:
       - "${PORT:-8080}:8080"   # Main UI

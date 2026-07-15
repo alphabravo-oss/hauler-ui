@@ -82,15 +82,15 @@ func (cm *CertManager) generateCert(serveType, certPath, keyPath string) (string
 	template := x509.Certificate{
 		SerialNumber: serialNumber,
 		Subject: pkix.Name{
-			Organization: []string{"Hauler UI"},
+			Organization: []string{"Wagon"},
 			CommonName:   serveType,
 		},
-		NotBefore:    time.Now(),
-		NotAfter:     time.Now().AddDate(0, 0, CertValidityDays),
-		KeyUsage:     x509.KeyUsageKeyEncipherment | x509.KeyUsageDigitalSignature,
-		ExtKeyUsage:  []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
-		DNSNames:     []string{"localhost"},
-		IPAddresses:  []net.IP{net.ParseIP("127.0.0.1"), net.ParseIP("0.0.0.0")},
+		NotBefore:   time.Now(),
+		NotAfter:    time.Now().AddDate(0, 0, CertValidityDays),
+		KeyUsage:    x509.KeyUsageKeyEncipherment | x509.KeyUsageDigitalSignature,
+		ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+		DNSNames:    []string{"localhost"},
+		IPAddresses: []net.IP{net.ParseIP("127.0.0.1"), net.ParseIP("0.0.0.0")},
 	}
 
 	if hostname, err := os.Hostname(); err == nil {

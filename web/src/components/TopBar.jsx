@@ -1,5 +1,6 @@
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext.jsx'
+import Brand from './Brand.jsx'
 import HaulSwitcher from './HaulSwitcher.jsx'
 import JobIndicator from './JobIndicator.jsx'
 
@@ -15,7 +16,7 @@ function TopBar() {
   return (
     <div className="top-bar">
       <div className="top-bar-left">
-        <span style={{ color: 'var(--accent-amber-dim)' }}>$</span> hauler-ui
+        <Brand />
       </div>
       <div className="top-bar-right">
         <HaulSwitcher />

@@ -7,7 +7,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/hauler-ui/hauler-ui/backend/internal/hauls"
+	"github.com/alphabravo-oss/wagon/backend/internal/hauls"
 )
 
 // resolveHaul returns the haul a request targets. When haulID is 0 it falls back

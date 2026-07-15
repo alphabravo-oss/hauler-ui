@@ -1,4 +1,4 @@
-module github.com/hauler-ui/hauler-ui/backend
+module github.com/alphabravo-oss/wagon/backend
 
 go 1.24.0
 

@@ -14,8 +14,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/hauler-ui/hauler-ui/backend/internal/hauls"
-	"github.com/hauler-ui/hauler-ui/backend/internal/jobrunner"
+	"github.com/alphabravo-oss/wagon/backend/internal/hauls"
+	"github.com/alphabravo-oss/wagon/backend/internal/jobrunner"
 )
 
 // StoreInfo represents the response from hauler store info

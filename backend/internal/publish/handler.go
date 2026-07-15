@@ -7,7 +7,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/hauler-ui/hauler-ui/backend/internal/hauls"
+	"github.com/alphabravo-oss/wagon/backend/internal/hauls"
 )
 
 // Handler exposes the publish API and path-routed file serving.

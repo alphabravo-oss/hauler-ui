@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/hauler-ui/hauler-ui/backend/internal/hauls"
+	"github.com/alphabravo-oss/wagon/backend/internal/hauls"
 )
 
 const (

@@ -10,15 +10,15 @@ import (
 	"sync"
 	"time"
 
-	"github.com/hauler-ui/hauler-ui/backend/internal/config"
+	"github.com/alphabravo-oss/wagon/backend/internal/config"
 )
 
 // Handler handles HTTP requests for job management
 type Handler struct {
-	runner    *Runner
-	cfg       *config.Config
-	mu        sync.RWMutex
-	clients   map[int64][]chan struct{} // map jobID to list of broadcast channels
+	runner  *Runner
+	cfg     *config.Config
+	mu      sync.RWMutex
+	clients map[int64][]chan struct{} // map jobID to list of broadcast channels
 }
 
 // NewHandler creates a new job handler

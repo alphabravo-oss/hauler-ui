@@ -1,6 +1,15 @@
 # Changelog
 
-All notable changes to Hauler UI will be documented in this file.
+All notable changes to Wagon will be documented in this file.
+
+## [Unreleased]
+
+### Changed
+
+- Renamed the product from Hauler UI to **Wagon**.
+- Moved repository references to `github.com/alphabravo-oss/wagon` and release
+  images to `ghcr.io/alphabravo-oss/wagon`.
+- Replaced the application logo, wordmark, and favicon with the Wagon branding.
 
 ## [0.1.0] - 2026-07-11
 

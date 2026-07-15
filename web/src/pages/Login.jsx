@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
+import Brand from '../components/Brand.jsx'
 import './Login.css'
 
 export default function Login() {
@@ -57,6 +58,9 @@ export default function Login() {
       <div className="login-page">
         <div className="login-card">
           <div className="login-header">
+            <div className="login-brand">
+              <Brand />
+            </div>
             <h1 className="login-title">Authentication Not Required</h1>
           </div>
           <div className="login-body">
@@ -77,7 +81,7 @@ export default function Login() {
       <div className="login-card">
         <div className="login-header">
           <div className="login-brand">
-            <span style={{ color: 'var(--accent-amber-dim)' }}>$</span> hauler-ui
+            <Brand />
           </div>
           <h1 className="login-title">Sign In</h1>
           <p className="login-subtitle">Enter your password to access the UI</p>

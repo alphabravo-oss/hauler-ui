@@ -6,8 +6,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/hauler-ui/hauler-ui/backend/internal/config"
-	"github.com/hauler-ui/hauler-ui/backend/internal/sqlite"
+	"github.com/alphabravo-oss/wagon/backend/internal/config"
+	"github.com/alphabravo-oss/wagon/backend/internal/sqlite"
 )
 
 // newTestService builds a Service backed by a freshly-migrated on-disk SQLite

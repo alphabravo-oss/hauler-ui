@@ -2,7 +2,7 @@
 
 ## Overview
 
-This guide covers setting up a local development environment, building, testing, and contributing to Hauler UI.
+This guide covers setting up a local development environment, building, testing, and contributing to Wagon.
 
 ## Prerequisites
 
@@ -17,8 +17,8 @@ This guide covers setting up a local development environment, building, testing,
 ### 1. Clone the Repository
 
 ```bash
-git clone https://github.com/rancherfederal/hauler-ui.git
-cd hauler-ui
+git clone https://github.com/alphabravo-oss/wagon.git
+cd wagon
 ```
 
 ### 2. Install Dependencies
@@ -58,7 +58,7 @@ The frontend dev server runs on `http://localhost:5173` and proxies API requests
 ## Project Structure
 
 ```
-hauler-ui/
+wagon/
 ├── backend/                 # Go backend server
 │   ├── internal/
 │   │   ├── auth/           # Authentication & sessions
@@ -123,7 +123,7 @@ make clean
 **Backend:**
 ```bash
 cd backend
-go build -o ../bin/hauler-ui .
+go build -o ../bin/wagon .
 ```
 
 **Frontend:**
@@ -134,7 +134,7 @@ npm run build
 
 **Docker:**
 ```bash
-docker build -t hauler-ui:latest .
+docker build -t wagon:latest .
 ```
 
 ## Testing
@@ -288,6 +288,6 @@ test: add integration tests for auth
 
 ## Getting Help
 
-- **Issues**: [GitHub Issues](https://github.com/rancherfederal/hauler-ui/issues)
+- **Issues**: [GitHub Issues](https://github.com/alphabravo-oss/wagon/issues)
 - **Documentation**: [Hauler Docs](https://rancherfederal.github.io/hauler/)
 - **Community**: [Rancher Government Slack](https://ranchergovernment.slack.com/)

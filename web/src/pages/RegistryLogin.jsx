@@ -176,7 +176,7 @@ function RegistryLogin() {
           <div className="card-title">About Credential Storage</div>
           <div style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', lineHeight: '1.6' }}>
             <p>
-              <strong>Note:</strong> Your password is <strong>not stored</strong> in the hauler-ui database.
+              <strong>Note:</strong> Your password is <strong>not stored</strong> in the Wagon database.
               Credentials are managed by hauler and stored in the Docker configuration file.
             </p>
             <p style={{ marginTop: '0.75rem' }}>

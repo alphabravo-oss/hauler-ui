@@ -22,9 +22,18 @@
 }
 
 .login-brand {
-  font-size: 1rem;
-  font-family: var(--font-mono);
+  display: flex;
+  justify-content: center;
   margin-bottom: 1.5rem;
+}
+
+.login-brand .product-brand-mark {
+  width: 2.5rem;
+  height: 2.5rem;
+}
+
+.login-brand .product-brand-wordmark {
+  font-size: 1.75rem;
 }
 
 .login-title {

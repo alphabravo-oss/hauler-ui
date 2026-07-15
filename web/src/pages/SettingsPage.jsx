@@ -269,7 +269,7 @@ function Settings() {
           <p style={{ marginBottom: '0.5rem' }}>
             Settings stored in the database are applied as defaults to every hauler job execution.
             These values can be overridden by setting the corresponding environment variable on the
-            hauler-ui container.
+            Wagon container.
           </p>
           <p>
             Environment variables take precedence over database settings. To reset a setting to its

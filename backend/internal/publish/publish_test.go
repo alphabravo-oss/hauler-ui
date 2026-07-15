@@ -5,7 +5,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/hauler-ui/hauler-ui/backend/internal/config"
+	"github.com/alphabravo-oss/wagon/backend/internal/config"
 )
 
 // okHandler is a trivial next handler that writes 200.

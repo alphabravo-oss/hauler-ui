@@ -1,12 +1,12 @@
-# Hauler UI — Enterprise Readiness Plan
+# Wagon — Enterprise Readiness Plan
 
 **Status:** Reference roadmap
-**Audience:** maintainers, platform/security teams evaluating Hauler UI for production
+**Audience:** maintainers, platform/security teams evaluating Wagon for production
 **Baseline:** the app as of the multi-haul + publish + single-user-hardening work
 (isolated per-haul stores, host-routed registry publishing, TLS, graceful
 shutdown, auto-restart, boot cleanup, job concurrency cap).
 
-This document describes what it takes to move Hauler UI from a **robust
+This document describes what it takes to move Wagon from a **robust
 single-operator tool** to a **multi-user, enterprise-grade** platform. It is a
 gap analysis plus a phased, prioritized roadmap with acceptance criteria — not a
 commitment of dates.

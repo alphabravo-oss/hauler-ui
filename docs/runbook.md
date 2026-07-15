@@ -1,8 +1,8 @@
-# Hauler UI Runbook
+# Wagon Runbook
 
 ## Overview
 
-Hauler UI is a single-container web interface for the Rancher Government Hauler CLI. It provides full operational parity with Hauler's command-line interface including store management, registry operations, and artifact synchronization.
+Wagon is a single-container web interface for the Rancher Government Hauler CLI. It provides full operational parity with Hauler's command-line interface including store management, registry operations, and artifact synchronization.
 
 **Port**: 8080 (HTTP)
 **Persistent Data**: `/data` (required volume mount)
@@ -15,7 +15,7 @@ Create a `docker-compose.yml`:
 
 ```yaml
 services:
-  hauler-ui:
+  wagon:
     build: ..
     ports:
       - "${PORT:-8080}:8080"   # Main UI
@@ -49,11 +49,11 @@ mkdir -p ./data
 
 # Run the container
 docker run -d \
-  --name hauler-ui \
+  --name wagon \
   -p 8080:8080 \
   -v $(pwd)/data:/data \
   -e HAULER_UI_PASSWORD=your-optional-password \
-  hauler-ui:latest
+  wagon:latest
 ```
 
 ## Building from Source
@@ -69,7 +69,7 @@ docker run -d \
 ```bash
 # Clone the repository
 git clone <repository-url>
-cd hauler-ui
+cd wagon
 
 # Using Make (recommended)
 make build
@@ -86,7 +86,7 @@ cd ../web && npm install && npm run build
 make docker-build
 
 # Or manually
-docker build -t hauler-ui:latest .
+docker build -t wagon:latest .
 ```
 
 ## Configuration
@@ -159,7 +159,7 @@ docker run -d \
   -v ./data:/data \
   -p 8080:8080 \
   -e HAULER_UI_PASSWORD=mys3cr3t \
-  hauler-ui:latest
+  wagon:latest
 ```
 
 - Sessions expire after 24 hours
@@ -186,45 +186,45 @@ To backup your hauler data:
 
 ```bash
 # Stop the container
-docker stop hauler-ui
+docker stop wagon
 
 # Backup the data directory
 tar czf hauler-backup-$(date +%Y%m%d).tar.gz ./data
 
 # Restart the container
-docker start hauler-ui
+docker start wagon
 ```
 
 ### Restore
 
 ```bash
 # Stop the container
-docker stop hauler-ui
+docker stop wagon
 
 # Restore the data directory
 rm -rf ./data
 tar xzf hauler-backup-YYYYMMDD.tar.gz
 
 # Restart the container
-docker start hauler-ui
+docker start wagon
 ```
 
 ### Migration to New Container
 
 ```bash
 # Stop old container
-docker stop hauler-ui
-docker rm hauler-ui
+docker stop wagon
+docker rm wagon
 
 # Pull new image
-docker pull hauler-ui:new-version
+docker pull wagon:new-version
 
 # Start with same volume mount
 docker run -d \
-  --name hauler-ui \
+  --name wagon \
   -p 8080:8080 \
   -v $(pwd)/data:/data \
-  hauler-ui:new-version
+  wagon:new-version
 ```
 
 ## Logs
@@ -233,10 +233,10 @@ View container logs:
 
 ```bash
 # Follow logs
-docker logs -f hauler-ui
+docker logs -f wagon
 
 # Last 100 lines
-docker logs --tail 100 hauler-ui
+docker logs --tail 100 wagon
 ```
 
 Job logs are also available in the UI under "Job History".
@@ -266,7 +266,7 @@ Job logs are also available in the UI under "Job History".
 3. **Existing auth conflict** - Remove old credentials:
    ```bash
    rm ./data/.docker/config.json
-   docker restart hauler-ui
+   docker restart wagon
    ```
 
 ### Store Operations Fail
@@ -283,7 +283,7 @@ Job logs are also available in the UI under "Job History".
 
 3. **Network issues** - Check connectivity to registries from within container:
    ```bash
-   docker exec hauler-ui wget -O- https://registry.example.com/v2/
+   docker exec wagon wget -O- https://registry.example.com/v2/
    ```
 
 ### Job Stuck Running
@@ -292,7 +292,7 @@ Job logs are also available in the UI under "Job History".
 2. Cancel the job from the Job History page
 3. If unresponsive, restart the container:
    ```bash
-   docker restart hauler-ui
+   docker restart wagon
    ```
 
 ### Serve Operations Not Accessible
@@ -310,7 +310,7 @@ docker run -d \
   -p 5000:5000 \
   -p 5001:5001 \
   -v ./data:/data \
-  hauler-ui:latest
+  wagon:latest
 ```
 
 If using docker-compose, ensure all three ports are mapped (see Quick Start example above).
